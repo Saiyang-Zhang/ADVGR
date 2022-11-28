@@ -26,6 +26,18 @@ float3 Renderer::Trace(Ray& ray)
 	float3 shadowRayDirection = scene.GetLightPos() - I;
 	Ray shadowray = Ray(I + shadowRayDirection * 0.001, normalize(shadowRayDirection), length(shadowRayDirection));
 	if (scene.IsOccluded(shadowray)) return black;
+	if (ray.objIdx == 1) {
+		float3 mirrorRayDirection = ray.D - 2 * dot(ray.D, N) * N;
+		Ray mirrorRay = Ray(I + shadowRayDirection * 0.001, normalize(mirrorRayDirection));
+		scene.FindNearest(mirrorRay);
+		if (mirrorRay.objIdx == -1) return 0;
+		color = scene.GetLightColor(mirrorRay.objIdx);
+		I = mirrorRay.O + mirrorRay.t * mirrorRay.D;
+		shadowRayDirection = scene.GetLightPos() - I;
+		shadowray = Ray(I + shadowRayDirection * 0.001, normalize(shadowRayDirection), length(shadowRayDirection));
+		if (scene.IsOccluded(shadowray)) return black;
+		return color;
+	}
 	return color;
 	/* visualize normal */ // return (N + 1) * 0.5f;
 	/* visualize distance */ // return 0.1f * float3( ray.t, ray.t, ray.t );

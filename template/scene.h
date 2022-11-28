@@ -59,26 +59,44 @@ namespace Tmpl8 {
 	// inside it. Good candidate for a dielectric material.
 	// -----------------------------------------------------------
 
-	class Material {
 
+	class Material 
+	{
 	public:
-		float3 color;
 		Material() = default;
-		Material(float3 color) : color(color) { }
+		Material(float3 color) : color(color) {}
 
-		float3 Getcolor() {
-			return color;
-		}
+		virtual float3 GetColor() const { return color; }
+
+		float3 color;
+	};
+
+	class BasicMaterial : public Material 
+	{
+	public:
+		BasicMaterial() = default;
+		BasicMaterial(float3 color) : Material(color) {}
+
+		float3 color;
+	};
+
+	class MirrorMaterial : public Material
+	{
+	public:
+		MirrorMaterial() = default;
+		MirrorMaterial(float3 color) : Material(color) {}
+
+		float3 color;
 	};
 
 	class Shape {
 	public:
 		Shape() = default;
-		Shape(Material mat) : mat(mat) {};
+		Shape(Material mat) : mat(mat) {}
 
 		float3 GetColor() const
 		{
-			return mat.color;
+			return mat.GetColor();
 		}
 
 		Material mat;
@@ -288,6 +306,38 @@ namespace Tmpl8 {
 		Material mat;
 	};
 
+	class Triangle :public Shape 
+	{
+		Triangle() = default;
+		Triangle(Material mat, int idx, float3 a, float3 b, float3 c) : 
+			Shape(mat), objIdx(idx), a(a), b(b), c(c) 
+		{
+			N = normalize(cross(b - a, c - a));
+			if (N.z < 0 ||
+				(N.z == 0 && N.y < 0) ||
+				(N.z == 0 && N.y == 0 && N.x < 0))
+			{
+				N = -N;
+			}
+		};
+
+		void Intersect(Ray& ray) 
+		{
+
+		}
+
+		float3 GetNormal()
+		{
+			return N;
+		}
+
+		float3 a, b, c;
+		float3 N;
+		int objIdx;
+		Material mat;
+
+	};
+
 	// -----------------------------------------------------------
 	// Scene class
 	// We intersect this. The query is internally forwarded to the
@@ -301,12 +351,13 @@ namespace Tmpl8 {
 		Scene()
 		{
 			// we store all primitives in one continuous buffer
-			Material red = Material(float3(1, 0, 0));
-			Material blue = Material(float3(0, 1, 0));
-			Material green = Material(float3(0, 0, 1));
-			Material purple = Material(float3(1, 0, 1));
+			Material red = BasicMaterial(float3(1, 0, 0));
+			Material green = BasicMaterial(float3(0, 1, 0));
+			Material blue = BasicMaterial(float3(0, 0, 1));
+			Material purple = BasicMaterial(float3(1, 0, 1));
+			Material yellow = BasicMaterial(float3(1, 1, 0));
 			quad = Quad(red, 0, 1);															// 0: light source
-			sphere = Sphere(blue, 1, float3(0), 0.5f);				// 1: bouncing ball
+			sphere = Sphere(yellow, 1, float3(0), 0.5f);				// 1: bouncing ball
 			sphere2 = Sphere(blue, 2, float3(0, 2.5f, -3.07f), 8);	// 2: rounded corners
 			cube = Cube(purple, 3, float3(0), float3(1.15f));									// 3: cube
 			plane[0] = Plane(green, 4, float3(1, 0, 0), 3);									// 4: left wall
@@ -427,6 +478,7 @@ namespace Tmpl8 {
 		{
 			return objIdx == 3 ? 1.0f : 0.0f;
 		}
+
 		__declspec(align(64)) // start a new cacheline here
 			float animTime = 0;
 		Quad quad;
