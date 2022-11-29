@@ -90,9 +90,13 @@ namespace Tmpl8 {
 	};
 
 	class Shape {
+
+	};
+
+	class Geometry {
 	public:
-		Shape() = default;
-		Shape(Material mat) : mat(mat) {}
+		Geometry() = default;
+		Geometry(Material mat) : mat(mat) {}
 
 		float3 GetColor() const
 		{
@@ -102,12 +106,12 @@ namespace Tmpl8 {
 		Material mat;
 	};
 
-	class Sphere : public Shape
+	class Sphere : public Geometry
 	{
 	public:
 		Sphere() = default;
 		Sphere(Material mat, int idx, float3 p, float r) :
-			Shape(mat), pos(p), r2(r* r), invr(1 / r), objIdx(idx) {}
+			Geometry(mat), pos(p), r2(r* r), invr(1 / r), objIdx(idx) {}
 		void Intersect(Ray& ray) const
 		{
 			float3 oc = ray.O - this->pos;
@@ -147,12 +151,12 @@ namespace Tmpl8 {
 	// Basic infinite plane, defined by a normal and a distance
 	// from the origin (in the direction of the normal).
 	// -----------------------------------------------------------
-	class Plane : public Shape
+	class Plane : public Geometry
 	{
 	public:
 		Plane() = default;
 		Plane(Material mat, int idx, float3 normal, float dist) :
-			Shape(mat), N(normal), d(dist), objIdx(idx) {}
+			Geometry(mat), N(normal), d(dist), objIdx(idx) {}
 		void Intersect(Ray& ray) const
 		{
 			float t = -(dot(ray.O, this->N) + this->d) / (dot(ray.D, this->N));
@@ -198,12 +202,12 @@ namespace Tmpl8 {
 	// start inside it; maybe not the best candidate for testing
 	// dielectrics.
 	// -----------------------------------------------------------
-	class Cube : public Shape
+	class Cube : public Geometry
 	{
 	public:
 		Cube() = default;
 		Cube(Material mat, int idx, float3 pos, float3 size, mat4 transform = mat4::Identity()) :
-			Shape(mat)
+			Geometry(mat)
 		{
 			objIdx = idx;
 			b[0] = pos - 0.5f * size, b[1] = pos + 0.5f * size;
@@ -268,12 +272,12 @@ namespace Tmpl8 {
 	// Quad primitive
 	// Oriented quad, intended to be used as a light source.
 	// -----------------------------------------------------------
-	class Quad : public Shape
+	class Quad : public Geometry
 	{
 	public:
 		Quad() = default;
 		Quad(Material mat, int idx, float s, mat4 transform = mat4::Identity()) :
-			Shape(mat)
+			Geometry(mat)
 		{
 			objIdx = idx;
 			size = s * 0.5f;
@@ -306,11 +310,11 @@ namespace Tmpl8 {
 		Material mat;
 	};
 
-	class Triangle :public Shape 
+	class Triangle :public Geometry 
 	{
 		Triangle() = default;
 		Triangle(Material mat, int idx, float3 a, float3 b, float3 c) : 
-			Shape(mat), objIdx(idx), a(a), b(b), c(c) 
+			Geometry(mat), objIdx(idx), a(a), b(b), c(c) 
 		{
 			N = normalize(cross(b - a, c - a));
 			if (N.z < 0 ||
