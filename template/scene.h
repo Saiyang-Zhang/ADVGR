@@ -329,7 +329,7 @@ namespace Tmpl8 {
 			cube = Cube(3, float3(0), float3(1.15f), mat4::Identity(), purple, Distance);									// 3: cube
 			plane[0] = Plane(4, float3(1, 0, 0), 3, green, Distance);									// 4: left wall
 			plane[1] = Plane(5, float3(-1, 0, 0), 2.99f,green, Distance);								// 5: right wall
-			plane[2] = Plane(6, float3(0, 1, 0), 1, green, Distance);									// 6: floor
+			plane[2] = Plane(6, float3(0, 1, 0), 1, green, Mirror);									// 6: floor
 			plane[3] = Plane(7, float3(0, -1, 0), 2, green, Distance);									// 7: ceiling
 			plane[4] = Plane(8, float3(0, 0, 1), 3, green, Distance);									// 8: front wall
 			plane[5] = Plane(9, float3(0, 0, -1), 3.99f, green, Distance);								// 9: back wall
