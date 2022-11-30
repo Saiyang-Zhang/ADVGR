@@ -16,6 +16,7 @@
 #include <string>
 #include <thread>
 #include <math.h>
+#include <map>
 #include <algorithm>
 #include <assert.h>
 #include <io.h>

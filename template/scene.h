@@ -25,22 +25,51 @@
 #define PLANE_Z(o,i) {if((t=-(ray.O.z+o)*ray.rD.z)<ray.t)ray.t=t,ray.objIdx=i;}
 
 namespace Tmpl8 {
-
+	 
 	enum MatType {
+		Air,
 		Basic,
-		diffuse,
-		Mirror,
+		Diffuse,
 		Glass,
-		Air
+		Mirror,
+		Water
 	};
+
+	enum Media {
+		AirToGlass,
+		GlassToAir,
+		AirToWater,
+		WaterToAir,
+		WaterToGlass,
+		GlassToWater
+	};
+
+	inline map<Media, float> refractive =
+	{
+		{AirToGlass, 1.5},
+		{GlassToAir, 0.6666666667},
+		{AirToWater, 1.3333333333},
+		{WaterToAir, 0.75},
+		{WaterToGlass, 1.125},
+		{GlassToWater, 0.8888888888}
+	};
+
+	inline float3 refract(float3 inDir, float3 N, Media media) {
+		float cosTheta = -dot(inDir, N);
+		float refracRate = refractive[media];
+		float cosThetaP = sqrt(1 - refracRate * refracRate * (1 - cosTheta * cosTheta));
+		return -cosThetaP * N + refracRate * (inDir + cosTheta * N);
+	}
 
 	__declspec(align(64)) class Ray
 	{
 	public:
 		Ray() = default;
-		Ray(float3 origin, float3 direction, float distance = 1e34f, MatType mat = Air)
+		Ray(float3 origin, float3 direction, float distance = 1e34f, 
+			float3 color = float3(1), MatType mat = Air) :
+			color(color), media(mat)
 		{
-			O = origin, D = direction, t = distance, material = mat;
+			O = origin, D = direction, t = distance;
 			// calculate reciprocal ray direction for triangles and AABBs
 			rD = float3(1 / D.x, 1 / D.y, 1 / D.z);
 #ifdef SPEEDTRIX
@@ -56,7 +85,8 @@ namespace Tmpl8 {
 		union { struct { float3 D; float d1; }; __m128 D4; };
 		union { struct { float3 rD; float d2; }; __m128 rD4; };
 #endif
-		MatType material = Air;
+		float3 color;
+		MatType media;
 		float t = 1e34f;
 		int objIdx = -1;
 		bool inside = false; // true when in medium
@@ -73,17 +103,17 @@ namespace Tmpl8 {
 	class Shape {
 	public:
 		Shape() = default;
-		Shape(float3 color, MatType type) : color(color), type(type) {}
+		Shape(float3 color, MatType type) : color(color), material(type) {}
 
 		float3 color;
-		MatType type;
+		MatType material;
 	};
 
 	class Sphere : public Shape
 	{
 	public:
 		Sphere() = default;
-		Sphere(int idx, float3 p, float r, float3 color = float3(1), MatType type = diffuse) :
+		Sphere(int idx, float3 p, float r, float3 color = float3(1), MatType type = Diffuse) :
 			Shape(color, type), pos(p), r2(r* r), invr(1 / r), objIdx(idx) {}
 		void Intersect(Ray& ray) const
 		{
@@ -120,14 +150,14 @@ namespace Tmpl8 {
 
 	// -----------------------------------------------------------
 	// Plane primitive
-	// Basic infinite plane, defined by a normal and a diffuse
+	// Basic infinite plane, defined by a normal and a Diffuse
 	// from the origin (in the direction of the normal).
 	// -----------------------------------------------------------
 	class Plane : public Shape
 	{
 	public:
 		Plane() = default;
-		Plane(int idx, float3 normal, float dist, float3 color = float3(1), MatType type = diffuse) :
+		Plane(int idx, float3 normal, float dist, float3 color = float3(1), MatType type = Diffuse) :
 			Shape(color, type), N(normal), d(dist), objIdx(idx) {}
 		void Intersect(Ray& ray) const
 		{
@@ -177,7 +207,7 @@ namespace Tmpl8 {
 	{
 	public:
 		Cube() = default;
-		Cube(int idx, float3 pos, float3 size, mat4 transform = mat4::Identity(), float3 color = float3::float3(1), MatType type = diffuse) :
+		Cube(int idx, float3 pos, float3 size, mat4 transform = mat4::Identity(), float3 color = float3::float3(1), MatType type = Diffuse) :
 			Shape(color, type)
 		{
 			objIdx = idx;
@@ -246,7 +276,7 @@ namespace Tmpl8 {
 	{
 	public:
 		Quad() = default;
-		Quad(int idx, float s, mat4 transform = mat4::Identity(), float3 color = float3(1), MatType type = diffuse) :
+		Quad(int idx, float s, mat4 transform = mat4::Identity(), float3 color = float3(1), MatType type = Diffuse) :
 			Shape(color, type)
 		{
 			objIdx = idx;
@@ -282,7 +312,7 @@ namespace Tmpl8 {
 	class Triangle :public Shape 
 	{
 		Triangle() = default;
-		Triangle(int idx, float3 a, float3 b, float3 c, float3 color = float3(1), MatType type = diffuse) :
+		Triangle(int idx, float3 a, float3 b, float3 c, float3 color = float3(1), MatType type = Diffuse) :
 			Shape(color, type), objIdx(idx), a(a), b(b), c(c)
 		{
 			N = normalize(cross(b - a, c - a));
@@ -331,13 +361,13 @@ namespace Tmpl8 {
 			quad = Quad(0, 1, mat4::Identity(), red, Basic);															// 0: light source
 			sphere = Sphere(1, float3(0), 0.5f, red, Mirror);				// 1: bouncing ball
 			sphere2 = Sphere(2, float3(0, 2.5f, -3.07f), 8, blue, Basic);	// 2: rounded corners
-			cube = Cube(3, float3(0), float3(1.15f), mat4::Identity(), purple, diffuse);									// 3: cube
-			plane[0] = Plane(4, float3(1, 0, 0), 3, green, diffuse);									// 4: left wall
-			plane[1] = Plane(5, float3(-1, 0, 0), 2.99f,green, diffuse);								// 5: right wall
+			cube = Cube(3, float3(0), float3(1.15f), mat4::Identity(), purple, Glass);									// 3: cube
+			plane[0] = Plane(4, float3(1, 0, 0), 3, green, Diffuse);									// 4: left wall
+			plane[1] = Plane(5, float3(-1, 0, 0), 2.99f,green, Diffuse);								// 5: right wall
 			plane[2] = Plane(6, float3(0, 1, 0), 1, green, Mirror);									// 6: floor
-			plane[3] = Plane(7, float3(0, -1, 0), 2, green, diffuse);									// 7: ceiling
-			plane[4] = Plane(8, float3(0, 0, 1), 3, green, diffuse);									// 8: front wall
-			plane[5] = Plane(9, float3(0, 0, -1), 3.99f, green, diffuse);								// 9: back wall
+			plane[3] = Plane(7, float3(0, -1, 0), 2, green, Diffuse);									// 7: ceiling
+			plane[4] = Plane(8, float3(0, 0, 1), 3, green, Diffuse);									// 8: front wall
+			plane[5] = Plane(9, float3(0, 0, -1), 3.99f, green, Diffuse);								// 9: back wall
 			SetTime(0);
 			// Note: once we have triangle support we should get rid of the class
 			// hierarchy: virtuals reduce performance somewhat.
@@ -378,11 +408,11 @@ namespace Tmpl8 {
 		MatType GetObjMat(int objIdx) const
 		{
 			if (objIdx == -1) return Basic; // or perhaps we should just crash
-			if (objIdx == 0) return quad.type;
-			if (objIdx == 1) return sphere.type;
-			if (objIdx == 2) return sphere2.type;
-			if (objIdx == 3) return cube.type;
-			return plane[objIdx - 4].type;
+			if (objIdx == 0) return quad.material;
+			if (objIdx == 1) return sphere.material;
+			if (objIdx == 2) return sphere2.material;
+			if (objIdx == 3) return cube.material;
+			return plane[objIdx - 4].material;
 		}
 		void FindNearest(Ray& ray) const
 		{
@@ -440,14 +470,6 @@ namespace Tmpl8 {
 			// once we have triangle support, we should pass objIdx and the bary-
 			// centric coordinates of the hit, instead of the intersection location.
 		}
-
-		//Material GetMaterial(int objIdx) {
-		//	if (objIdx == -1) return Material(float3(0,0,0)); // or perhaps we should just crash
-		//	if (objIdx == 0) return Material(GetLightColor());
-		//	if (objIdx == 1) return sphere.mat;
-		//	if (objIdx == 2) return sphere2.mat;
-		//	if (objIdx == 3) return Material(float3(0,0,1));
-		//}
 
 		float GetReflectivity(int objIdx, float3 I) const
 		{
