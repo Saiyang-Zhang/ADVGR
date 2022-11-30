@@ -9,7 +9,7 @@ namespace Tmpl8
 		// game flow methods
 		void Init();
 		float3 Trace(Ray& ray);
-		float DirectIllumination(float3& I);
+		float3 DirectIllumination(Ray& ray);
 		void Tick(float deltaTime);
 		void Shutdown() { /* implement if you want to do something on exit */ }
 		// input handling

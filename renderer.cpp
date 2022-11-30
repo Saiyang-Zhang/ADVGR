@@ -22,11 +22,13 @@ float3 Renderer::Trace(Ray& ray)
 	float3 N = scene.GetNormal(ray.objIdx, I, ray.D);
 	float3 albedo = scene.GetAlbedo(ray.objIdx, I);
 
+	MatType type = scene.GetObjMat(ray.objIdx);
 	float3 color = scene.GetLightColor(ray.objIdx);
 	float3 shadowRayDirection = scene.GetLightPos() - I;
-	Ray shadowray = Ray(I + shadowRayDirection * 0.001, normalize(shadowRayDirection), length(shadowRayDirection));
+	float distance = length(shadowRayDirection);
+	Ray shadowray = Ray(I + shadowRayDirection * 0.001, normalize(shadowRayDirection), distance);
 	if (scene.IsOccluded(shadowray)) return black;
-	if (ray.objIdx == 1) {
+	if (type == Mirror) {
 		float3 mirrorRayDirection = ray.D - 2 * dot(ray.D, N) * N;
 		Ray mirrorRay = Ray(I + shadowRayDirection * 0.001, normalize(mirrorRayDirection));
 		scene.FindNearest(mirrorRay);
@@ -38,17 +40,13 @@ float3 Renderer::Trace(Ray& ray)
 		if (scene.IsOccluded(shadowray)) return black;
 		return color;
 	}
+	if (type == Distance) {
+		return color / distance;
+	}
 	return color;
 	/* visualize normal */ // return (N + 1) * 0.5f;
 	/* visualize distance */ // return 0.1f * float3( ray.t, ray.t, ray.t );
 	/* visualize albedo */ // return albedo; 
-}
-
-float Renderer::DirectIllumination(float3& I) {
-	float3 shadowRayDirection = scene.GetLightPos() - I;
-	Ray shadowRay = Ray(I + shadowRayDirection * 0.000001, shadowRayDirection);
-	scene.FindNearest(shadowRay);
-	if (shadowRay.objIdx == -1) return 1;
 }
 
 // -----------------------------------------------------------

@@ -59,59 +59,27 @@ namespace Tmpl8 {
 	// inside it. Good candidate for a dielectric material.
 	// -----------------------------------------------------------
 
-
-	class Material 
-	{
-	public:
-		Material() = default;
-		Material(float3 color) : color(color) {}
-
-		virtual float3 GetColor() const { return color; }
-
-		float3 color;
-	};
-
-	class BasicMaterial : public Material 
-	{
-	public:
-		BasicMaterial() = default;
-		BasicMaterial(float3 color) : Material(color) {}
-
-		float3 color;
-	};
-
-	class MirrorMaterial : public Material
-	{
-	public:
-		MirrorMaterial() = default;
-		MirrorMaterial(float3 color) : Material(color) {}
-
-		float3 color;
+	enum MatType {
+		Basic,
+		Distance,
+		Mirror
 	};
 
 	class Shape {
-
-	};
-
-	class Geometry {
 	public:
-		Geometry() = default;
-		Geometry(Material mat) : mat(mat) {}
+		Shape() = default;
+		Shape(float3 color, MatType type) : color(color), type(type) {}
 
-		float3 GetColor() const
-		{
-			return mat.GetColor();
-		}
-
-		Material mat;
+		float3 color;
+		MatType type;
 	};
 
-	class Sphere : public Geometry
+	class Sphere : public Shape
 	{
 	public:
 		Sphere() = default;
-		Sphere(Material mat, int idx, float3 p, float r) :
-			Geometry(mat), pos(p), r2(r* r), invr(1 / r), objIdx(idx) {}
+		Sphere(int idx, float3 p, float r, float3 color = float3(1), MatType type = Distance) :
+			Shape(color, type), pos(p), r2(r* r), invr(1 / r), objIdx(idx) {}
 		void Intersect(Ray& ray) const
 		{
 			float3 oc = ray.O - this->pos;
@@ -143,7 +111,6 @@ namespace Tmpl8 {
 		float3 pos = 0;
 		float r2 = 0, invr = 0;
 		int objIdx = -1;
-		Material mat;
 	};
 
 	// -----------------------------------------------------------
@@ -151,12 +118,12 @@ namespace Tmpl8 {
 	// Basic infinite plane, defined by a normal and a distance
 	// from the origin (in the direction of the normal).
 	// -----------------------------------------------------------
-	class Plane : public Geometry
+	class Plane : public Shape
 	{
 	public:
 		Plane() = default;
-		Plane(Material mat, int idx, float3 normal, float dist) :
-			Geometry(mat), N(normal), d(dist), objIdx(idx) {}
+		Plane(int idx, float3 normal, float dist, float3 color = float3(1), MatType type = Distance) :
+			Shape(color, type), N(normal), d(dist), objIdx(idx) {}
 		void Intersect(Ray& ray) const
 		{
 			float t = -(dot(ray.O, this->N) + this->d) / (dot(ray.D, this->N));
@@ -193,7 +160,6 @@ namespace Tmpl8 {
 		float3 N;
 		float d;
 		int objIdx = -1;
-		Material mat;
 	};
 
 	// -----------------------------------------------------------
@@ -202,12 +168,12 @@ namespace Tmpl8 {
 	// start inside it; maybe not the best candidate for testing
 	// dielectrics.
 	// -----------------------------------------------------------
-	class Cube : public Geometry
+	class Cube : public Shape
 	{
 	public:
 		Cube() = default;
-		Cube(Material mat, int idx, float3 pos, float3 size, mat4 transform = mat4::Identity()) :
-			Geometry(mat)
+		Cube(int idx, float3 pos, float3 size, mat4 transform = mat4::Identity(), float3 color = float3::float3(1), MatType type = Distance) :
+			Shape(color, type)
 		{
 			objIdx = idx;
 			b[0] = pos - 0.5f * size, b[1] = pos + 0.5f * size;
@@ -265,19 +231,18 @@ namespace Tmpl8 {
 		float3 b[2];
 		mat4 M, invM;
 		int objIdx = -1;
-		Material mat;
 	};
 
 	// -----------------------------------------------------------
 	// Quad primitive
 	// Oriented quad, intended to be used as a light source.
 	// -----------------------------------------------------------
-	class Quad : public Geometry
+	class Quad : public Shape
 	{
 	public:
 		Quad() = default;
-		Quad(Material mat, int idx, float s, mat4 transform = mat4::Identity()) :
-			Geometry(mat)
+		Quad(int idx, float s, mat4 transform = mat4::Identity(), float3 color = float3(1), MatType type = Distance) :
+			Shape(color, type)
 		{
 			objIdx = idx;
 			size = s * 0.5f;
@@ -307,14 +272,13 @@ namespace Tmpl8 {
 		float size;
 		mat4 T, invT;
 		int objIdx = -1;
-		Material mat;
 	};
 
-	class Triangle :public Geometry 
+	class Triangle :public Shape 
 	{
 		Triangle() = default;
-		Triangle(Material mat, int idx, float3 a, float3 b, float3 c) : 
-			Geometry(mat), objIdx(idx), a(a), b(b), c(c) 
+		Triangle(int idx, float3 a, float3 b, float3 c, float3 color = float3(1), MatType type = Distance) :
+			Shape(color, type), objIdx(idx), a(a), b(b), c(c)
 		{
 			N = normalize(cross(b - a, c - a));
 			if (N.z < 0 ||
@@ -338,8 +302,6 @@ namespace Tmpl8 {
 		float3 a, b, c;
 		float3 N;
 		int objIdx;
-		Material mat;
-
 	};
 
 	// -----------------------------------------------------------
@@ -355,21 +317,22 @@ namespace Tmpl8 {
 		Scene()
 		{
 			// we store all primitives in one continuous buffer
-			Material red = BasicMaterial(float3(1, 0, 0));
-			Material green = BasicMaterial(float3(0, 1, 0));
-			Material blue = BasicMaterial(float3(0, 0, 1));
-			Material purple = BasicMaterial(float3(1, 0, 1));
-			Material yellow = BasicMaterial(float3(1, 1, 0));
-			quad = Quad(red, 0, 1);															// 0: light source
-			sphere = Sphere(yellow, 1, float3(0), 0.5f);				// 1: bouncing ball
-			sphere2 = Sphere(blue, 2, float3(0, 2.5f, -3.07f), 8);	// 2: rounded corners
-			cube = Cube(purple, 3, float3(0), float3(1.15f));									// 3: cube
-			plane[0] = Plane(green, 4, float3(1, 0, 0), 3);									// 4: left wall
-			plane[1] = Plane(green, 5, float3(-1, 0, 0), 2.99f);								// 5: right wall
-			plane[2] = Plane(green, 6, float3(0, 1, 0), 1);									// 6: floor
-			plane[3] = Plane(green, 7, float3(0, -1, 0), 2);									// 7: ceiling
-			plane[4] = Plane(green, 8, float3(0, 0, 1), 3);									// 8: front wall
-			plane[5] = Plane(green, 9, float3(0, 0, -1), 3.99f);								// 9: back wall
+			float3 red = float3(1, 0, 0);
+			float3 green = float3(0, 1, 0);
+			float3 blue = float3(0, 0, 1);
+			float3 purple = float3(1, 0, 1);
+			float3 yellow = float3(1, 1, 0);
+			float3 white = float3(1, 1, 1);
+			quad = Quad(0, 1, mat4::Identity(), red, Basic);															// 0: light source
+			sphere = Sphere(1, float3(0), 0.5f, white, Mirror);				// 1: bouncing ball
+			sphere2 = Sphere(2, float3(0, 2.5f, -3.07f), 8, blue, Basic);	// 2: rounded corners
+			cube = Cube(3, float3(0), float3(1.15f), mat4::Identity(), purple, Distance);									// 3: cube
+			plane[0] = Plane(4, float3(1, 0, 0), 3, green, Distance);									// 4: left wall
+			plane[1] = Plane(5, float3(-1, 0, 0), 2.99f,green, Distance);								// 5: right wall
+			plane[2] = Plane(6, float3(0, 1, 0), 1, green, Distance);									// 6: floor
+			plane[3] = Plane(7, float3(0, -1, 0), 2, green, Distance);									// 7: ceiling
+			plane[4] = Plane(8, float3(0, 0, 1), 3, green, Distance);									// 8: front wall
+			plane[5] = Plane(9, float3(0, 0, -1), 3.99f, green, Distance);								// 9: back wall
 			SetTime(0);
 			// Note: once we have triangle support we should get rid of the class
 			// hierarchy: virtuals reduce performance somewhat.
@@ -401,11 +364,20 @@ namespace Tmpl8 {
 		float3 GetLightColor(int objIdx) const
 		{
 			if (objIdx == -1) return float3(0); // or perhaps we should just crash
-			if (objIdx == 0) return quad.GetColor();
-			if (objIdx == 1) return sphere.GetColor();
-			if (objIdx == 2) return sphere2.GetColor();
-			if (objIdx == 3) return cube.GetColor();
-			return plane[objIdx - 4].GetColor();
+			if (objIdx == 0) return quad.color;
+			if (objIdx == 1) return sphere.color;
+			if (objIdx == 2) return sphere2.color;
+			if (objIdx == 3) return cube.color;
+			return plane[objIdx - 4].color;
+		}
+		MatType GetObjMat(int objIdx) const
+		{
+			if (objIdx == -1) return Basic; // or perhaps we should just crash
+			if (objIdx == 0) return quad.type;
+			if (objIdx == 1) return sphere.type;
+			if (objIdx == 2) return sphere2.type;
+			if (objIdx == 3) return cube.type;
+			return plane[objIdx - 4].type;
 		}
 		void FindNearest(Ray& ray) const
 		{
