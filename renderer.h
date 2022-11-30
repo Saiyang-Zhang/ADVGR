@@ -9,7 +9,8 @@ namespace Tmpl8
 		// game flow methods
 		void Init();
 		float3 Trace(Ray& ray, int iter);
-		float3 DirectIllumination(Ray& ray);
+		float DirectIllumination(float3& I);
+		float3 Absorption(float3 color, float d, float3 absorpMat);
 		void Tick(float deltaTime);
 		void Shutdown() { /* implement if you want to do something on exit */ }
 		// input handling
@@ -66,6 +67,7 @@ namespace Tmpl8
 		float4* accumulator;
 		Scene scene;
 		Camera camera;
+		float indexAir, indexGlass, airToGlass, glassToAir;
 	};
 
 } // namespace Tmpl8
