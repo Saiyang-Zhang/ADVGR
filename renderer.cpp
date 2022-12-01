@@ -17,17 +17,42 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 {
 	float3 black = float3(0, 0, 0);
 	scene.FindNearest(ray);
-	if (ray.objIdx == -1) return 0; // or a fancy sky color
+	if (ray.objIdx == -1 || iter > 5) return 0; // or a fancy sky color
+	
 	float3 I = ray.O + ray.t * ray.D;
 	float3 N = scene.GetNormal(ray.objIdx, I, ray.D);
+	float3 shadowRayDirection = scene.GetLightPos() - I;
+	float distance = length(shadowRayDirection);
+	Ray shadowray = Ray(I + shadowRayDirection * 0.001, normalize(shadowRayDirection), distance, ray.color, ray.media);
 	float3 albedo = scene.GetAlbedo(ray.objIdx, I);
 	float cosO = dot(N, -ray.D);
 
 	MatType mat = scene.GetObjMat(ray.objIdx);
 	float3 color = scene.GetLightColor(ray.objIdx);
+	if (scene.IsOccluded(shadowray)) {
+		if (mat == Mirror) {
+			float3 reflDirection = reflect(ray.D, N);
+			Ray mirrorRay = Ray(I + reflDirection * 0.001, normalize(reflDirection));
+			return Trace(mirrorRay, iter + 1);
+		}
+		if (mat == Glass)
+		{
+			if (ray.media == Glass) {
+				float3 refracRayDir = refract(ray.D, -N, GlassToAir);
+				Ray refracRay = Ray(I + refracRayDir * 0.001, refracRayDir, 10000, 1, Air);
+				return Trace(refracRay, iter);
+			}
+			if (ray.media == Air) {
+				float3 refracRayDir = refract(ray.D, N, AirToGlass);
+				Ray refracRay = Ray(refracRayDir * 0.001, refracRayDir, 10000, 1, Glass);
+				return Trace(refracRay, iter);
+			}
+		}
+		else return 0.0f;
+	}
 
-	if (mat == Diffuse || iter > 3) {
-		return color * DirectIllumination(I);
+	if (mat == Diffuse) {
+		return color / distance;
 	}
 	if (mat == Mirror) {
 		float3 reflDirection = reflect(ray.D, N);
@@ -38,19 +63,14 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	{	
 		if (ray.media == Glass) {
 			float3 refracRayDir = refract(ray.D, -N, GlassToAir);
-			Ray refracRay = Ray(I + refracRayDir*0.001, refracRayDir, mat = Air);
+			Ray refracRay = Ray(I + refracRayDir*0.001, refracRayDir, 10000, 1, Air);
 			return Trace(refracRay, iter);
 		}
 		if (ray.media == Air) {
 			float3 refracRayDir = refract(ray.D, N, AirToGlass);
-			Ray refracRay = Ray(refracRayDir * 0.001, refracRayDir, mat = Glass);
+			Ray refracRay = Ray(refracRayDir * 0.001, refracRayDir, 10000, 1, Glass);
 			return Trace(refracRay, iter);
-
-
-			float3 refleRayDir = reflect(I, N);
 		}
-
-		
 		//float k;
 		//if (ray.media == Lucht) k = 1 - pow(airToGlass, 2) * (1 - pow(cosO, 2)); 
 		//if (ray.media == Glas) k = 1 - pow(glassToAir, 2) * (1 - pow(cosO, 2));

@@ -46,19 +46,21 @@ namespace Tmpl8 {
 
 	inline map<Media, float> refractive =
 	{
-		{AirToGlass, 1.5},
-		{GlassToAir, 0.6666666667},
-		{AirToWater, 1.3333333333},
-		{WaterToAir, 0.75},
-		{WaterToGlass, 1.125},
-		{GlassToWater, 0.8888888888}
+		{AirToGlass, 0.6666666667},
+		{GlassToAir, 1.5},
+		{AirToWater, 0.75},
+		{WaterToAir, 1.3333333333},
+		{WaterToGlass, 0.8888888888},
+		{GlassToWater, 1.125}
 	};
 
 	inline float3 refract(float3 inDir, float3 N, Media media) {
 		float cosTheta = -dot(inDir, N);
 		float refracRate = refractive[media];
-		float cosThetaP = sqrt(1 - refracRate * refracRate * (1 - cosTheta * cosTheta));
-		return -cosThetaP * N + refracRate * (inDir + cosTheta * N);
+		float cosThetaS = 1 - refracRate * refracRate * (1 - cosTheta * cosTheta);
+		if (cosThetaS < 0) return float3(0);
+		float cosThetaP = sqrt(cosThetaS);
+		return normalize( - cosThetaP * N + refracRate * (inDir + cosTheta * N) );
 	}
 
 	__declspec(align(64)) class Ray
@@ -66,8 +68,8 @@ namespace Tmpl8 {
 	public:
 		Ray() = default;
 		Ray(float3 origin, float3 direction, float distance = 1e34f, 
-			float3 color = float3(1), MatType mat = Air) :
-			color(color), media(mat)
+			float3 color = float3(1), MatType media = Air) :
+			color(color), media(media)
 		{
 			O = origin, D = direction, t = distance;
 			// calculate reciprocal ray direction for triangles and AABBs
@@ -361,7 +363,7 @@ namespace Tmpl8 {
 			quad = Quad(0, 1, mat4::Identity(), red, Basic);															// 0: light source
 			sphere = Sphere(1, float3(0), 0.5f, red, Mirror);				// 1: bouncing ball
 			sphere2 = Sphere(2, float3(0, 2.5f, -3.07f), 8, blue, Basic);	// 2: rounded corners
-			cube = Cube(3, float3(0), float3(1.15f), mat4::Identity(), purple, Glass);									// 3: cube
+			cube = Cube(3, float3(0), float3(1.65, 1.65, 0.15), mat4::Identity(), purple, Glass);									// 3: cube
 			plane[0] = Plane(4, float3(1, 0, 0), 3, green, Diffuse);									// 4: left wall
 			plane[1] = Plane(5, float3(-1, 0, 0), 2.99f,green, Diffuse);								// 5: right wall
 			plane[2] = Plane(6, float3(0, 1, 0), 1, green, Mirror);									// 6: floor
