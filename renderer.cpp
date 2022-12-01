@@ -15,7 +15,6 @@ void Renderer::Init()
 // -----------------------------------------------------------
 float3 Renderer::Trace(Ray& ray, int iter = 0)
 {
-	float3 black = float3(0, 0, 0);
 	scene.FindNearest(ray);
 	if (ray.objIdx == -1 || iter > 5) return 0; // or a fancy sky color
 	
@@ -40,12 +39,12 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 			if (ray.media == Glass) {
 				float3 refracRayDir = refract(ray.D, -N, GlassToAir);
 				Ray refracRay = Ray(I + refracRayDir * 0.001, refracRayDir, 10000, 1, Air);
-				return Trace(refracRay, iter);
+				return Trace(refracRay, iter+1);
 			}
 			if (ray.media == Air) {
 				float3 refracRayDir = refract(ray.D, N, AirToGlass);
 				Ray refracRay = Ray(refracRayDir * 0.001, refracRayDir, 10000, 1, Glass);
-				return Trace(refracRay, iter);
+				return Trace(refracRay, iter+1);
 			}
 		}
 		else return 0.0f;
@@ -64,12 +63,12 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 		if (ray.media == Glass) {
 			float3 refracRayDir = refract(ray.D, -N, GlassToAir);
 			Ray refracRay = Ray(I + refracRayDir*0.001, refracRayDir, 10000, 1, Air);
-			return Trace(refracRay, iter);
+			return Trace(refracRay, iter+1);
 		}
 		if (ray.media == Air) {
 			float3 refracRayDir = refract(ray.D, N, AirToGlass);
 			Ray refracRay = Ray(refracRayDir * 0.001, refracRayDir, 10000, 1, Glass);
-			return Trace(refracRay, iter);
+			return Trace(refracRay, iter+1);
 		}
 		//float k;
 		//if (ray.media == Lucht) k = 1 - pow(airToGlass, 2) * (1 - pow(cosO, 2)); 
