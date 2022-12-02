@@ -10,7 +10,7 @@ namespace Tmpl8
 		void Init();
 		float3 Trace(Ray& ray, int iter);
 		float DirectIllumination(float3& I);
-		float3 Absorption(float3 color, float d, float3 absorpMat);
+		float3 Absorb(float3 color, float d, float3 absorpMat);
 		void Tick(float deltaTime);
 		void Shutdown() { /* implement if you want to do something on exit */ }
 		// input handling
@@ -67,7 +67,6 @@ namespace Tmpl8
 		float4* accumulator;
 		Scene scene;
 		Camera camera;
-		float indexAir = 1 , indexGlass = 1.5;
 	};
 
 } // namespace Tmpl8
