@@ -364,12 +364,12 @@ namespace Tmpl8 {
 			sphere = Sphere(1, float3(0), 0.5f, red, Mirror);				// 1: bouncing ball
 			sphere2 = Sphere(2, float3(0, 2.5f, -3.07f), 8, blue, Basic);	// 2: rounded corners
 			cube = Cube(3, float3(0), float3(1.15f), mat4::Identity(), purple, Glass);									// 3: cube
-			plane[0] = Plane(4, float3(1, 0, 0), 3, green, Diffuse);									// 4: left wall
-			plane[1] = Plane(5, float3(-1, 0, 0), 2.99f,green, Diffuse);								// 5: right wall
+			plane[0] = Plane(4, float3(1, 0, 0), 3, red, Diffuse);									// 4: left wall
+			plane[1] = Plane(5, float3(-1, 0, 0), 2.99f, blue, Diffuse);								// 5: right wall
 			plane[2] = Plane(6, float3(0, 1, 0), 1, green, Mirror);									// 6: floor
 			plane[3] = Plane(7, float3(0, -1, 0), 2, green, Diffuse);									// 7: ceiling
 			plane[4] = Plane(8, float3(0, 0, 1), 3, green, Diffuse);									// 8: front wall
-			plane[5] = Plane(9, float3(0, 0, -1), 3.99f, green, Diffuse);								// 9: back wall
+			plane[5] = Plane(9, float3(0, 0, -1), 3.99f, white, Diffuse);								// 9: back wall
 			SetTime(0);
 			// Note: once we have triangle support we should get rid of the class
 			// hierarchy: virtuals reduce performance somewhat.
@@ -398,8 +398,9 @@ namespace Tmpl8 {
 			cube.M = M2, cube.invM = M2.FastInvertedTransformNoScale();
 			
 			// sphere animation: bounce
-			float tm = 1 - sqrf(fmodf(animTime, 2.0f) - 1);
-			sphere.pos = float3(-1.4f, -0.5f + tm, 2);
+			//float tm = 1 - sqrf(fmodf(animTime, 2.0f) - 1);
+			//sphere.pos = float3(-1.4f, -0.5f + tm, 2);
+			sphere.pos = float3(-1.4f, 0.2, 2);
 		}
 		float3 GetLightPos() const
 		{
