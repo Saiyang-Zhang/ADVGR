@@ -55,12 +55,12 @@ namespace Tmpl8 {
 	};
 
 	inline float3 refract(float3 inDir, float3 N, Media media) {
-		float cosTheta = -dot(inDir, N);
+		float cosTheta = abs(dot(inDir, N));
 		float refracRate = refractive[media];
 		float cosThetaS = 1 - refracRate * refracRate * (1 - cosTheta * cosTheta);
 		if (cosThetaS < 0) return float3(0);
 		float cosThetaP = sqrt(cosThetaS);
-		return normalize( - cosThetaP * N + refracRate * (inDir + cosTheta * N) );
+		return normalize(-cosThetaP * N + refracRate * (inDir + cosTheta * N));
 	}
 
 	__declspec(align(64)) class Ray
@@ -311,33 +311,61 @@ namespace Tmpl8 {
 		int objIdx = -1;
 	};
 
-	class Triangle :public Shape 
+	class Triangle : public Shape 
 	{
+	public:
+
 		Triangle() = default;
-		Triangle(int idx, float3 a, float3 b, float3 c, float3 color = float3(1), MatType type = Diffuse) :
+		Triangle(int idx, float3 N, float3 a, float3 b, float3 c, float3 color = float3(1), MatType type = Diffuse) :
 			Shape(color, type), objIdx(idx), a(a), b(b), c(c)
 		{
-			N = normalize(cross(b - a, c - a));
-			if (N.z < 0 ||
-				(N.z == 0 && N.y < 0) ||
-				(N.z == 0 && N.y == 0 && N.x < 0))
-			{
-				N = -N;
-			}
+			
 		};
 
-		void Intersect(Ray& ray) 
+		void Intersect(Ray& ray) const
 		{
+			float D = dot(N, a);
 
+			// parralel check
+			float parallel = dot(N, ray.D);
+			if (parallel == 0) return;
+			float t = -(dot(N, ray.O) + D) / dot(N, ray.D);
+			if( t < ray.t && t > 0 ) {	
+				float3 I = ray.O + ray.D * ray.t;
+
+				// edge 0
+				float3 edge0 = b - a;
+				float3 vp0 = I - a;
+				float3 C = cross(edge0, vp0);
+				if (dot(N,C) < 0) return;
+
+				// edge 1
+				float3 edge1 = c - b;
+				float3 vp1 = I - b;
+				C = cross(edge1, vp1);
+				if (dot(N, C) < 0)  return;
+
+				// edge 2
+				float3 edge2 = a - c;
+				float3 vp2 = I - c;
+				C = cross(edge2,vp2);
+				if (dot(N,C) < 0) return;
+
+				ray.t = t;
+				ray.objIdx = objIdx;
+				
+			}
 		}
 
-		float3 GetNormal()
+		float3 GetNormal() const
 		{
 			return N;
 		}
 
 		float3 a, b, c;
 		float3 N;
+		float3 color;
+		MatType type;
 		int objIdx;
 	};
 
@@ -361,15 +389,16 @@ namespace Tmpl8 {
 			float3 yellow = float3(1, 1, 0);
 			float3 white = float3(1, 1, 1);
 			quad = Quad(0, 1, mat4::Identity(), red, Basic);															// 0: light source
-			sphere = Sphere(1, float3(0), 0.5f, red, Mirror);				// 1: bouncing ball
+			sphere = Sphere(1, float3(0), 0.5f, white, Glass);				// 1: bouncing ball
 			sphere2 = Sphere(2, float3(0, 2.5f, -3.07f), 8, blue, Basic);	// 2: rounded corners
-			cube = Cube(3, float3(0), float3(1.15f), mat4::Identity(), purple, Glass);									// 3: cube
+			cube = Cube(3, float3(0), float3(1.15f), mat4::Identity(), purple, Diffuse);									// 3: cube
 			plane[0] = Plane(4, float3(1, 0, 0), 3, red, Diffuse);									// 4: left wall
 			plane[1] = Plane(5, float3(-1, 0, 0), 2.99f, blue, Diffuse);								// 5: right wall
-			plane[2] = Plane(6, float3(0, 1, 0), 1, green, Mirror);									// 6: floor
+			plane[2] = Plane(6, float3(0, 1, 0), 1, white, Diffuse);									// 6: floor
 			plane[3] = Plane(7, float3(0, -1, 0), 2, green, Diffuse);									// 7: ceiling
 			plane[4] = Plane(8, float3(0, 0, 1), 3, green, Diffuse);									// 8: front wall
 			plane[5] = Plane(9, float3(0, 0, -1), 3.99f, white, Diffuse);								// 9: back wall
+			triangle = Triangle(10, float3(0, 0, -1), float3(1, 1, 1.5), float3(-1, 1, 1.5), float3(0, 0.1, 1.5), purple, Basic);
 			SetTime(0);
 			// Note: once we have triangle support we should get rid of the class
 			// hierarchy: virtuals reduce performance somewhat.
@@ -416,6 +445,7 @@ namespace Tmpl8 {
 			if (objIdx == 1) return sphere.color;
 			if (objIdx == 2) return sphere2.color;
 			if (objIdx == 3) return cube.color;
+			if (objIdx == 10) return triangle.color;
 			return plane[objIdx - 4].color;
 		}
 		MatType GetObjMat(int objIdx) const
@@ -425,6 +455,7 @@ namespace Tmpl8 {
 			if (objIdx == 1) return sphere.material;
 			if (objIdx == 2) return sphere2.material;
 			if (objIdx == 3) return cube.material;
+			if (objIdx == 10) return triangle.material;
 			return plane[objIdx - 4].material;
 		}
 		void FindNearest(Ray& ray) const
@@ -438,6 +469,7 @@ namespace Tmpl8 {
 			sphere.Intersect(ray);
 			sphere2.Intersect(ray);
 			cube.Intersect(ray);
+			triangle.Intersect(ray);
 		}
 		bool IsOccluded(Ray& ray) const
 		{
@@ -447,6 +479,7 @@ namespace Tmpl8 {
 			sphere.Intersect(ray);
 			sphere2.Intersect(ray);
 			cube.Intersect(ray);
+			triangle.Intersect(ray);
 			return ray.t < rayLength;
 			// technically this is wasteful: 
 			// - we potentially search beyond rayLength
@@ -463,6 +496,7 @@ namespace Tmpl8 {
 			else if (objIdx == 1) N = sphere.GetNormal(I);
 			else if (objIdx == 2) N = sphere2.GetNormal(I);
 			else if (objIdx == 3) N = cube.GetNormal(I);
+			else if (objIdx == 10) N = triangle.GetNormal();
 			else
 			{
 				// faster to handle the 6 planes without a call to GetNormal
@@ -503,6 +537,7 @@ namespace Tmpl8 {
 		Sphere sphere2;
 		Cube cube;
 		Plane plane[6];
+		Triangle triangle;
 	};
 
 }

@@ -67,7 +67,7 @@ namespace Tmpl8
 		float4* accumulator;
 		Scene scene;
 		Camera camera;
-		float indexAir, indexGlass, airToGlass, glassToAir;
+		float indexAir = 1 , indexGlass = 1.5;
 	};
 
 } // namespace Tmpl8
