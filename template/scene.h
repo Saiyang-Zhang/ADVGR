@@ -378,9 +378,9 @@ namespace Tmpl8 {
 			float3 yellow = float3(1, 1, 0);
 			float3 white = float3(1, 1, 1);
 			quad = Quad(0, 1, mat4::Identity(), white, Basic);															// 0: light source
-			sphere = Sphere(1, float3(0), 0.5f, white, Glass);				// 1: bouncing ball
+			sphere = Sphere(1, float3(0), 0.5f, yellow, Mirror);				// 1: bouncing ball
 			sphere2 = Sphere(2, float3(0, 2.5f, -3.07f), 8, blue, Basic);	// 2: rounded corners
-			cube = Cube(3, float3(0), float3(1.15f), mat4::Identity(), white, Mirror);									// 3: cube
+			cube = Cube(3, float3(0), float3(1.15f), mat4::Identity(), purple, Glass);									// 3: cube
 			plane[0] = Plane(4, float3(1, 0, 0), 3, red, Diffuse);									// 4: left wall
 			plane[1] = Plane(5, float3(-1, 0, 0), 2.99f, blue, Diffuse);								// 5: right wall
 			plane[2] = Plane(6, float3(0, 1, 0), 1, white, Diffuse);									// 6: floor
@@ -399,28 +399,28 @@ namespace Tmpl8 {
 			animTime = t;
 			// light source animation: swing
 			
-			mat4 M1base = mat4::Translate(float3(0, 2.6f, 2));
-			mat4 M1 = M1base * mat4::RotateZ(sinf(animTime * 0.6f) * 0.1f) * mat4::Translate(float3(0, -0.9, 0));
-			quad.T = M1, quad.invT = M1.FastInvertedTransformNoScale();
-
-			// cube animation: spin
-			mat4 M2base = mat4::RotateX(PI / 4) * mat4::RotateZ(PI / 4);
-			mat4 M2 = mat4::Translate(float3(1.4f, 0, 2)) * mat4::RotateY(animTime * 0.5f) * M2base;
-			cube.M = M2, cube.invM = M2.FastInvertedTransformNoScale();
-
-			// sphere animation: bounce
-			float tm = 1 - sqrf(fmodf(animTime, 2.0f) - 1);
-			sphere.pos = float3(-1.4f, -0.5f + tm, 2);
-
 			//mat4 M1base = mat4::Translate(float3(0, 2.6f, 2));
-			//mat4 M1 = M1base * mat4::Translate(float3(0, -0.9, 0));
-			//
+			//mat4 M1 = M1base * mat4::RotateZ(sinf(animTime * 0.6f) * 0.1f) * mat4::Translate(float3(0, -0.9, 0));
 			//quad.T = M1, quad.invT = M1.FastInvertedTransformNoScale();
 
-			//mat4 M2 = mat4::Translate(float3(1.4f, 0, 2));
+			//// cube animation: spin
+			//mat4 M2base = mat4::RotateX(PI / 4) * mat4::RotateZ(PI / 4);
+			//mat4 M2 = mat4::Translate(float3(1.4f, 0, 2)) * mat4::RotateY(animTime * 0.5f) * M2base;
 			//cube.M = M2, cube.invM = M2.FastInvertedTransformNoScale();
-			//
-			//sphere.pos = float3(-1.4f, 0.2, 2);
+
+			//// sphere animation: bounce
+			//float tm = 1 - sqrf(fmodf(animTime, 2.0f) - 1);
+			//sphere.pos = float3(-1.4f, -0.5f + tm, 2);
+
+			mat4 M1base = mat4::Translate(float3(0, 2.6f, 2));
+			mat4 M1 = M1base * mat4::Translate(float3(0, -0.9, 0));
+			
+			quad.T = M1, quad.invT = M1.FastInvertedTransformNoScale();
+
+			mat4 M2 = mat4::Translate(float3(1.4f, 0, 2));
+			cube.M = M2, cube.invM = M2.FastInvertedTransformNoScale();
+			
+			sphere.pos = float3(-1.4f, 0.2, 2);
 		
 		}
 		float3 GetLightPos() const
