@@ -27,6 +27,9 @@ namespace Tmpl8
 		float4* accumulator;
 		Scene scene;
 		Camera camera;
+		bool anti_aliasing;
+		float raysPerPixel;
+		float pixelWidth, pixelHeight;
 	};
 
 } // namespace Tmpl8

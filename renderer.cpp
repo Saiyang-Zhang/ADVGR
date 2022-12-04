@@ -8,6 +8,12 @@ void Renderer::Init()
 	// create fp32 rgb pixel buffer to render to
 	accumulator = (float4*)MALLOC64(SCRWIDTH * SCRHEIGHT * 16);
 	memset(accumulator, 0, SCRWIDTH * SCRHEIGHT * 16);
+
+
+	anti_aliasing = true;
+	raysPerPixel = 8;
+	pixelWidth = (float)length(camera.topRight - camera.topLeft) / (float)SCRWIDTH;
+	pixelHeight = (float)length(camera.topLeft - camera.bottomLeft) / (float)SCRHEIGHT;
 }
 
 // -----------------------------------------------------------
@@ -117,19 +123,43 @@ float3 Renderer::Absorb(float3 color, float distance, float3 absorption)
 // -----------------------------------------------------------
 void Renderer::Tick(float deltaTime)
 {
+	printf("TICK");
 	// animation
 	static float animTime = 0;
 	scene.SetTime(animTime += deltaTime * 0.002f);
 	// pixel loop
 	Timer t;
+
 	// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
-#pragma omp parallel for schedule(dynamic)
+#	pragma omp parallel for schedule(dynamic)
 	for (int y = 0; y < SCRHEIGHT; y++)
 	{
 		// trace a primary ray for each pixel on the line
-		for (int x = 0; x < SCRWIDTH; x++)
-			accumulator[x + y * SCRWIDTH] =
-			float4(Trace(camera.GetPrimaryRay(x, y)), 0);
+		for (int x = 0; x < SCRWIDTH; x++) {
+			// code for anti-aliassing
+			if (anti_aliasing)
+			{
+				float3 color(0, 0, 0);
+				for (int i = 0; i < raysPerPixel; i++)
+				{
+					float ran = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
+					float ran2 = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
+					//printf("RAND: %f", ran);
+					color += Trace(camera.GetPrimaryRay((float)x + ran * pixelWidth, (float)y + ran2 * pixelHeight));
+					//printf("color %f \n", color.x);
+				}
+				color /= (float)raysPerPixel;
+				//printf("x: %f", color.x);
+				//printf("y: %f", color.x);
+				//printf("z: %f\n", color.x);
+				accumulator[x + y * SCRWIDTH] =
+					float4(color, 0);
+			}
+			else {
+				accumulator[x + y * SCRWIDTH] =
+					float4(Trace(camera.GetPrimaryRay(x, y)), 0);
+			}
+		}
 		// translate accumulator contents to rgb32 pixels
 		for (int dest = y * SCRWIDTH, x = 0; x < SCRWIDTH; x++)
 			screen->pixels[dest + x] =

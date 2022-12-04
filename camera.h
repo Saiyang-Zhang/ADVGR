@@ -18,12 +18,14 @@ namespace Tmpl8 {
 			topLeft = float3(-aspect, 1, 2);
 			topRight = float3(aspect, 1, 2);
 			bottomLeft = float3(-aspect, -1, 2);
+
+
 			M = mat4::Identity();
 			invM = M.FastInvertedTransformNoScale();
 			R = mat4::Identity();
 			invR = M.FastInvertedTransformNoScale();
 		}
-		Ray GetPrimaryRay(const int x, const int y)
+		Ray GetPrimaryRay(const float x, const float y)
 		{
 			// calculate pixel position on virtual screen plane
 			const float u = (float)x * (1.0f / SCRWIDTH);
