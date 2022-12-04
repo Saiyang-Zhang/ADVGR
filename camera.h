@@ -19,7 +19,6 @@ namespace Tmpl8 {
 			topRight = float3(aspect, 1, 2);
 			bottomLeft = float3(-aspect, -1, 2);
 
-
 			M = mat4::Identity();
 			invM = M.FastInvertedTransformNoScale();
 			R = mat4::Identity();

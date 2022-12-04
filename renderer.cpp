@@ -101,6 +101,27 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	return color;
 }
 
+float3 Renderer::PathTrace(Ray& ray, int iter = 0, int n = 100) {
+	int i = 0;
+	float3 color_accumulated = float3(0);
+	for (i = 0; i < n; i++) {
+		scene.FindNearest(ray);
+		if (ray.objIdx == -1 || iter > 5) return 0; // or a fancy sky color
+
+		float3 I = ray.O + ray.t * ray.D;
+		float3 N = scene.GetNormal(ray.objIdx, I, ray.D);
+		float3 bounceRayDir = scene.GetLightPos() - I;
+		float distance = length(bounceRayDir);
+		Ray bounceRay = Ray(I + bounceRayDir * 0.001, normalize(bounceRayDir), distance, ray.color, ray.media);
+		float3 albedo = scene.GetAlbedo(ray.objIdx, I);
+		float cos1 = dot(N, -ray.D);
+
+		MatType mat = scene.GetObjMat(ray.objIdx);
+		float3 color = scene.GetLightColor(ray.objIdx);
+		return color;
+	}
+}
+
 float Renderer::DirectIllumination(float3& I) {
 	float3 shadowRayDirection = scene.GetLightPos() - I;
 	float distance = length(shadowRayDirection);
@@ -123,7 +144,6 @@ float3 Renderer::Absorb(float3 color, float distance, float3 absorption)
 // -----------------------------------------------------------
 void Renderer::Tick(float deltaTime)
 {
-	printf("TICK");
 	// animation
 	static float animTime = 0;
 	scene.SetTime(animTime += deltaTime * 0.002f);
@@ -135,41 +155,28 @@ void Renderer::Tick(float deltaTime)
 	for (int y = 0; y < SCRHEIGHT; y++)
 	{
 		// trace a primary ray for each pixel on the line
-		for (int x = 0; x < SCRWIDTH; x++) {
-			// code for anti-aliassing
-			if (anti_aliasing)
-			{
-				float3 color(0, 0, 0);
-				for (int i = 0; i < raysPerPixel; i++)
-				{
-					float ran = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
-					float ran2 = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
-					//printf("RAND: %f", ran);
-					color += Trace(camera.GetPrimaryRay((float)x + ran * pixelWidth, (float)y + ran2 * pixelHeight));
-					//printf("color %f \n", color.x);
-				}
-				color /= (float)raysPerPixel;
-				//printf("x: %f", color.x);
-				//printf("y: %f", color.x);
-				//printf("z: %f\n", color.x);
-				accumulator[x + y * SCRWIDTH] =
-					float4(color, 0);
-			}
-			else {
-				accumulator[x + y * SCRWIDTH] =
-					float4(Trace(camera.GetPrimaryRay(x, y)), 0);
-			}
+		for (int x = 0; x < SCRWIDTH; x++)
+		{
+			float3 color = float3(0);
+			//color = Trace(camera.GetPrimaryRay(x, y));
+
+			//anti-aliasing
+			color = color + Trace(camera.GetPrimaryRay(x + 0.25, y + 0.1));
+			color = color + Trace(camera.GetPrimaryRay(x - 0.25, y - 0.1));
+			color = color + Trace(camera.GetPrimaryRay(x + 0.1, y - 0.25));
+			color = color + Trace(camera.GetPrimaryRay(x - 0.1, y + 0.25));
+			color = 0.25 * color;
+			accumulator[x + y * SCRWIDTH] =
+			float4(color, 0);
 		}
+			
 		// translate accumulator contents to rgb32 pixels
 		for (int dest = y * SCRWIDTH, x = 0; x < SCRWIDTH; x++)
 			screen->pixels[dest + x] =
 			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
 	}
-	// performance report - running average - ms, MRays/s
-	static float avg = 10, alpha = 1;
-	avg = (1 - alpha) * avg + alpha * t.elapsed() * 1000;
-	if (alpha > 0.05f) alpha *= 0.5f;
-	float fps = 1000 / avg, rps = (SCRWIDTH * SCRHEIGHT) * fps;
+	
+	// in game control
 	if (GetKeyState('A') < 0) camera.Translate(float3(0.1, 0, 0));
 	if (GetKeyState('D') < 0) camera.Translate(float3(-0.1, 0, 0));
 	if (GetKeyState('S') < 0) camera.Translate(float3(0, 0, 0.1));
@@ -180,6 +187,13 @@ void Renderer::Tick(float deltaTime)
 	if (GetKeyState(38) < 0) camera.Rotate(0.05, 0);
 	if (GetKeyState(39) < 0) camera.Rotate(0, -0.05);
 	if (GetKeyState(40) < 0) camera.Rotate(-0.05, 0);
+	
+	// performance report - running average - ms, MRays/s
+	static float avg = 10, alpha = 1;
+	avg = (1 - alpha) * avg + alpha * t.elapsed() * 1000;
+	if (alpha > 0.05f) alpha *= 0.5f;
+	float fps = 1000 / avg, rps = (SCRWIDTH * SCRHEIGHT) * fps;
+	
 	
 	//printf("%5.2fms (%.1fps) - %.1fMrays/s\n", avg, fps, rps / 1000000);
 }

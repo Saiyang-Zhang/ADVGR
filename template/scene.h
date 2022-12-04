@@ -31,6 +31,7 @@ namespace Tmpl8 {
 		Basic,
 		Diffuse,
 		Glass,
+		Glossy,
 		Mirror,
 		Water
 	};
@@ -307,38 +308,40 @@ namespace Tmpl8 {
 	public:
 
 		Triangle() = default;
-		Triangle(int idx, float3 N, float3 a, float3 b, float3 c, float3 color, MatType type) :
-			Shape(color, type), objIdx(idx), a(a), b(b), c(c)
+		Triangle(int idx, float3 v0, float3 v1, float3 v2, float3 color, MatType type) :
+			Shape(color, type), objIdx(idx), v0(v0), v1(v1), v2(v2)
 		{
-			
+			N = normalize(cross(v1 - v0, v2 - v0));
 		};
 
 		void Intersect(Ray& ray) const
 		{
-			float D = dot(N, a);
+			float3 O = TransformPosition(ray.O, invM);
+			float3 D = TransformVector(ray.D, invM);
+			float DP = dot(N, v0);
 
 			// parralel check
-			float parallel = dot(N, ray.D);
+			float parallel = dot(N, D);
 			if (parallel == 0) return;
-			float t = -(dot(N, ray.O) + D) / dot(N, ray.D);
+			float t = -(dot(N, O) + DP) / dot(N, D);
 			if( t < ray.t && t > 0 ) {	
-				float3 I = ray.O + ray.D * ray.t;
+				float3 I = O + D * ray.t;
 
 				// edge 0
-				float3 edge0 = b - a;
-				float3 vp0 = I - a;
+				float3 edge0 = v1 - v0;
+				float3 vp0 = I - v0;
 				float3 C = cross(edge0, vp0);
 				if (dot(N,C) < 0) return;
 
 				// edge 1
-				float3 edge1 = c - b;
-				float3 vp1 = I - b;
+				float3 edge1 = v2 - v1;
+				float3 vp1 = I - v1;
 				C = cross(edge1, vp1);
 				if (dot(N, C) < 0)  return;
 
 				// edge 2
-				float3 edge2 = a - c;
-				float3 vp2 = I - c;
+				float3 edge2 = v0 - v2;
+				float3 vp2 = I - v2;
 				C = cross(edge2,vp2);
 				if (dot(N,C) < 0) return;
 
@@ -353,9 +356,10 @@ namespace Tmpl8 {
 			return N;
 		}
 
-		float3 a, b, c;
+		float3 v0, v1, v2;
 		float3 N;
-		int objIdx;
+		int objIdx = -1;
+		mat4 M, invM;
 	};
 
 	// -----------------------------------------------------------
@@ -387,7 +391,7 @@ namespace Tmpl8 {
 			plane[3] = Plane(7, float3(0, -1, 0), 2, green, Diffuse);									// 7: ceiling
 			plane[4] = Plane(8, float3(0, 0, 1), 3, green, Diffuse);									// 8: front wall
 			plane[5] = Plane(9, float3(0, 0, -1), 3.99f, white, Diffuse);								// 9: back wall
-			triangle = Triangle(10, float3(0, 0, -1), float3(1, 1, 1.5), float3(-1, 1, 1.5), float3(0, 0.1, 1.5), purple, Diffuse);
+			triangle = Triangle(10, float3(1, 1, 1.5), float3(-1, 1, 1.5), float3(0, 0.1, 1.5), purple, Diffuse);
 			SetTime(0);
 			// Note: once we have triangle support we should get rid of the class
 			// hierarchy: virtuals reduce performance somewhat.
@@ -419,6 +423,9 @@ namespace Tmpl8 {
 
 			mat4 M2 = mat4::Translate(float3(1.4f, 0, 2));
 			cube.M = M2, cube.invM = M2.FastInvertedTransformNoScale();
+
+			//mat4 M3 = mat4::RotateY(animTime * 0.5f);
+			//triangle.M = M3, triangle.invM = M3.FastInvertedTransformNoScale();
 			
 			sphere.pos = float3(-1.4f, 0.2, 2);
 		
