@@ -20,31 +20,32 @@ namespace Tmpl8 {
 			bottomLeft = float3(-aspect, -1, 2);
 			M = mat4::Identity();
 			invM = M.FastInvertedTransformNoScale();
+			R = mat4::Identity();
+			invR = M.FastInvertedTransformNoScale();
 		}
 		Ray GetPrimaryRay(const int x, const int y)
 		{
 			// calculate pixel position on virtual screen plane
 			const float u = (float)x * (1.0f / SCRWIDTH);
 			const float v = (float)y * (1.0f / SCRHEIGHT);
-			const float3 P = topLeft + u * (topRight - topLeft) + v * (bottomLeft - topLeft);
+			float3 tL = TransformVector(topLeft, invR);
+			float3 tR = TransformVector(topRight, invR); 
+			float3 bL = TransformVector(bottomLeft, invR);
+			const float3 P = tL + u * (tR - tL) + v * (bL - tL);
 			return Ray(TransformPosition(camPos, invM), normalize(P));
 		}
 		void Translate(float3 vector) {
 			float3 trueVector = TransformVector(vector, invR);
-			M = M * mat4::Translate(vector);
+			M = M * mat4::Translate(trueVector);
 			invM = M.FastInvertedTransformNoScale();
 		}
 		void Rotate(float x, float y) {
-			Rotation = Rotation * mat4::RotateX(x) * mat4::RotateY(y);
-			invR = Rotation.FastInvertedTransformNoScale();
-			topLeft = TransformVector(topLeft, invR);
-			topRight = TransformVector(topRight, invR);
-			bottomLeft = TransformVector(bottomLeft, invR);
+			R = mat4::RotateX(x) * mat4::RotateY(y) * R;
+			invR = R.FastInvertedTransformNoScale();
 		}
 		float aspect = (float)SCRWIDTH / (float)SCRHEIGHT;
 		float3 camPos;
 		float3 topLeft, topRight, bottomLeft;
-		float sinXZ, sinYZ;
-		mat4 M, invM, Rotation, invR;
+		mat4 M, invM, R, invR;
 	};
 }

@@ -146,10 +146,10 @@ void Renderer::Tick(float deltaTime)
 	if (GetKeyState('W') < 0) camera.Translate(float3(0, 0, -0.1));
 	if (GetKeyState('Q') < 0) camera.Translate(float3(0, -0.1, 0));
 	if (GetKeyState('E') < 0) camera.Translate(float3(0, 0.1, 0));
-	if (GetKeyState(37) < 0) camera.Rotate(0, 0.001);
-	if (GetKeyState(38) < 0) camera.Rotate(0.001, 0);
-	if (GetKeyState(39) < 0) camera.Rotate(0, -0.001);
-	if (GetKeyState(40) < 0) camera.Rotate(-0.001, 0);
+	if (GetKeyState(37) < 0) camera.Rotate(0, 0.05);
+	if (GetKeyState(38) < 0) camera.Rotate(0.05, 0);
+	if (GetKeyState(39) < 0) camera.Rotate(0, -0.05);
+	if (GetKeyState(40) < 0) camera.Rotate(-0.05, 0);
 	
 	//printf("%5.2fms (%.1fps) - %.1fMrays/s\n", avg, fps, rps / 1000000);
 }
