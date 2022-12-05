@@ -115,6 +115,13 @@ float3 Renderer::PathTrace(Ray& ray, int iter = 0, int n = 100) {
 	
 	int i;
 	float3 color_accum = float3(0);
+	if (mat == Mirror) {
+		float3 reflectRayDir = normalize(reflect(ray.D, N));
+		Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir);
+		return color * PathTrace(mirrorRay, iter);
+	}
+
+#	pragma omp parallel for schedule(dynamic)
 	for (i = 0; i < n; i++) {
 		float3 bounceRayDir = normalize(N + random_in_uint_sphere());
 		float bounceCos = -dot(ray.D, bounceRayDir);

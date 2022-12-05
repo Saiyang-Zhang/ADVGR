@@ -23,6 +23,7 @@ namespace Tmpl8
 		void MouseWheel(float y) { /* implement if you want to handle the mouse wheel */ }
 		void KeyUp(int key) { /* implement if you want to handle keys */ }
 		void KeyDown(int key) { };
+
 		// data members
 		int2 mousePos;
 		float4* accumulator;
