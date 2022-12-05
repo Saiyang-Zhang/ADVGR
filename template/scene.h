@@ -32,6 +32,7 @@ namespace Tmpl8 {
 		Diffuse,
 		Glass,
 		Glossy,
+		Light,
 		Mirror,
 		Water
 	};
@@ -71,8 +72,8 @@ namespace Tmpl8 {
 	public:
 		Ray() = default;
 		Ray(float3 origin, float3 direction, float distance = 1e34f, 
-			float3 color = float3(1), MatType media = Air) :
-			color(color), media(media)
+			MatType media = Air) :
+			media(media)
 		{
 			O = origin, D = direction, t = distance;
 			// calculate reciprocal ray direction for triangles and AABBs
@@ -90,7 +91,6 @@ namespace Tmpl8 {
 		union { struct { float3 D; float d1; }; __m128 D4; };
 		union { struct { float3 rD; float d2; }; __m128 rD4; };
 #endif
-		float3 color;
 		MatType media;
 		float t = 1e34f;
 		int objIdx = -1;
@@ -392,7 +392,7 @@ namespace Tmpl8 {
 			float3 purple = float3(1, 0, 1);
 			float3 yellow = float3(1, 1, 0);
 			float3 white = float3(1, 1, 1);
-			quad = Quad(0, 1, mat4::Identity(), white, Basic);															// 0: light source
+			quad = Quad(0, 1, mat4::Identity(), white, Light);															// 0: light source
 			sphere = Sphere(1, float3(0), 0.5f, yellow, Mirror);				// 1: bouncing ball
 			sphere2 = Sphere(2, float3(0, 2.5f, -3.07f), 8, blue, Basic);	// 2: rounded corners
 			cube = Cube(3, float3(0), float3(1.15f), mat4::Identity(), purple, Glass);									// 3: cube

@@ -23,7 +23,7 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	float3 N = scene.GetNormal(ray.objIdx, I, ray.D);
 	float3 shadowRayDir = normalize(scene.GetLightPos() - I);
 	float distance = length(scene.GetLightPos() - I);
-	Ray shadowray = Ray(I + shadowRayDir * 0.001, shadowRayDir, distance, ray.color, ray.media);
+	Ray shadowray = Ray(I + shadowRayDir * 0.001, shadowRayDir, distance, ray.media);
 	float3 albedo = scene.GetAlbedo(ray.objIdx, I);
 	float cos1 = dot(N, -ray.D);
 
@@ -46,7 +46,7 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	}
 	if (mat == Mirror) {
 		float3 reflectRayDir = normalize(reflect(ray.D, N));
-		Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, 10000, float3(1), Air);
+		Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, 10000, Air);
 		return color * Trace(mirrorRay, iter + 1);
 	}	
 	if (mat == Glass) 
@@ -58,7 +58,7 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 		if (k < 0) {
 			float3 reflDirection = normalize(reflect(ray.D, N));
 
-			Ray reflectRay = Ray(I + reflDirection * 0.001, reflDirection, 10000, 1, ray.media);
+			Ray reflectRay = Ray(I + reflDirection * 0.001, reflDirection, 10000, ray.media);
 			return Trace(reflectRay, iter + 1);
 		}
 
@@ -67,10 +67,10 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 
 			if (ray.media == Glass) {
 				float3 refractRayDir = normalize(-cos2 * N + refractive[GlassToAir] * (ray.D + cos1 * N));
-				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, 10000, 1, Air);
+				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, 10000, Air);
 
 				float3 reflectRayDir = normalize(reflect(ray.D, N));
-				Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, 10000, 1, Glass);
+				Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, 10000, Glass);
 
 				float cos2 = sqrt(1 - pow(refractive[GlassToAir] * sqrt(1 - pow(cos1, 2)), 2));
 
@@ -81,10 +81,10 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 			}
 			if (ray.media == Air) {
 				float3 refractRayDir = normalize(-cos2 * N + refractive[AirToGlass] * (ray.D + cos1 * N));
-				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, 10000, 1, Glass);
+				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, 10000, Glass);
 
 				float3 reflectRayDir = normalize(reflect(ray.D, N));
-				Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, 10000, 1, Air);
+				Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, 10000, Air);
 
 				float Fr = 0.5 * ((pow((cos1 - refractive[GlassToAir] * cos2) / (cos1 + refractive[GlassToAir] * cos2), 2)) + (pow((cos2 - refractive[GlassToAir] *cos1) / (cos2 + refractive[GlassToAir] * cos1), 2)));
 				float Ft = 1 - Fr;
@@ -97,25 +97,25 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 }
 
 float3 Renderer::PathTrace(Ray& ray, int iter = 0, int n = 100) {
-	int i = 0;
-	float3 color_accumulated = float3(0);
 	scene.FindNearest(ray);
-	if (ray.objIdx == -1 || iter > 5) return 0; // or a fancy sky color
+	MatType mat = scene.GetObjMat(ray.objIdx);
+	float3 color = scene.GetLightColor(ray.objIdx);
+
+	if (mat == Light) return color;
+	if (ray.objIdx == -1 || iter > 2) return 0; // or a fancy sky color
 
 	float3 I = ray.O + ray.t * ray.D;
 	float3 N = scene.GetNormal(ray.objIdx, I, ray.D);
-	float3 albedo = scene.GetAlbedo(ray.objIdx, I);
-	float cos1 = dot(N, -ray.D);
+	//float3 albedo = scene.GetAlbedo(ray.objIdx, I);
+	//float cos1 = dot(N, -ray.D);
+	//float3 color_accum = float3(0);
 
-	MatType mat = scene.GetObjMat(ray.objIdx);
-	float3 color = scene.GetLightColor(ray.objIdx);
+	int i = 0;
 //#	pragma omp parallel for schedule(dynamic)
-//	for (i = 0; i < n; i++) {
-//		float3 bounceRayDir = normalize(N + random_in_uint_sphere());
-//		Ray bounceRay = Ray(I + bounceRayDir * 0.001, bounceRayDir, 10000, ray.color, ray.media);
-//
-//		
-//	}
+	float3 bounceRayDir = normalize(N + random_in_uint_sphere());
+	Ray bounceRay = Ray(I + bounceRayDir * 0.001, bounceRayDir, 10000, ray.media);
+
+	color *= PathTrace(bounceRay, iter + 1, n);
 	return color;
 }
 
@@ -167,7 +167,7 @@ void Renderer::Tick(float deltaTime)
 			//float4(color, 0);
 
 			accumulator[x + y * SCRWIDTH] =
-				float4(PathTrace(camera.GetPrimaryRay(x, y)), 0);
+				float4(PathTrace(camera.GetPrimaryRay(x, y), 0, 5), 0);
 		}
 			
 		// translate accumulator contents to rgb32 pixels
