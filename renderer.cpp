@@ -102,21 +102,29 @@ float3 Renderer::PathTrace(Ray& ray, int iter = 0, int n = 100) {
 	float3 color = scene.GetLightColor(ray.objIdx);
 
 	if (mat == Light) return color;
-	if (ray.objIdx == -1 || iter > 2) return 0; // or a fancy sky color
+	if (ray.objIdx == -1 || iter > 1) return 0; // or a fancy sky color
+
+	//float r = rand() / RAND_MAX;
+	//float p = 0.8;
+	//if (r > p) return 0;
 
 	float3 I = ray.O + ray.t * ray.D;
 	float3 N = scene.GetNormal(ray.objIdx, I, ray.D);
 	//float3 albedo = scene.GetAlbedo(ray.objIdx, I);
-	//float cos1 = dot(N, -ray.D);
-	//float3 color_accum = float3(0);
+	float cos1 = dot(N, -ray.D);
+	
+	int i;
+	float3 color_accum = float3(0);
+	for (i = 0; i < n; i++) {
+		float3 bounceRayDir = normalize(N + random_in_uint_sphere());
+		float bounceCos = -dot(ray.D, bounceRayDir);
+		Ray bounceRay = Ray(I + bounceRayDir * 0.001, bounceRayDir, 10000, ray.media);
 
-	int i = 0;
-//#	pragma omp parallel for schedule(dynamic)
-	float3 bounceRayDir = normalize(N + random_in_uint_sphere());
-	Ray bounceRay = Ray(I + bounceRayDir * 0.001, bounceRayDir, 10000, ray.media);
-
-	color *= PathTrace(bounceRay, iter + 1, n);
-	return color;
+		float3 bounceColor = PathTrace(bounceRay, iter + 1, n);
+		color_accum += bounceColor;
+	}
+	color_accum *= 1.0 / n;
+	return color * fsqrt(color_accum);
 }
 
 float Renderer::DirectIllumination(float3& I) {

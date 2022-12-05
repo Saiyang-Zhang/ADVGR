@@ -56,6 +56,10 @@ namespace Tmpl8 {
 		{GlassToWater, 1.125}
 	};
 
+	inline float3 fsqrt(float3 vector) {
+		return float3(sqrt(vector.x), sqrt(vector.y), sqrt(vector.z));
+	}
+
 	inline float3 random_in_uint_sphere() {
 		while (true) {
 			float3 result;
