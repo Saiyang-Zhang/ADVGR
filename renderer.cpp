@@ -36,7 +36,7 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 			return color * Trace(mirrorRay, iter + 1);
 		}
 		if (mat == Glass) {
-			
+
 		}
 		else return 0.0f;
 	}
@@ -56,9 +56,9 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 		if (ray.media == Glass) k = 1 - pow(refractive[GlassToAir], 2) * (1 - pow(cos1, 2));
 		
 		if (k < 0) {
-			float3 reflDirection = normalize(reflect(ray.D, N));
+			float3 reflectRayDir = normalize(reflect(ray.D, N));
 
-			Ray reflectRay = Ray(I + reflDirection * 0.001, reflDirection, 10000, ray.media);
+			Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, 10000, ray.media);
 			return Trace(reflectRay, iter + 1);
 		}
 
@@ -121,9 +121,9 @@ float3 Renderer::PathTrace(Ray& ray, int sample = 64) {
 		if (ray.media == Glass) k = 1 - pow(refractive[GlassToAir], 2) * (1 - pow(cos1, 2));
 
 		if (k < 0) {
-			float3 reflDirection = normalize(reflect(ray.D, N));
+			float3 reflectRayDir = normalize(reflect(ray.D, N));
 
-			Ray reflectRay = Ray(I + reflDirection * 0.001, reflDirection, 10000, ray.media);
+			Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, 10000, ray.media);
 			color_accum = Path(reflectRay, 0);
 		}
 		else {
@@ -178,7 +178,7 @@ float3 Renderer::Path(Ray& ray, int iter = 0) {
 	float3 color = scene.GetLightColor(ray.objIdx);
 
 	if (mat == Light) return color;
-	if (ray.objIdx == -1 || iter > 3) return 0; // or a fancy sky color
+	if (ray.objIdx == -1 || iter > 4) return 0; // or a fancy sky color
 
 	float3 I = ray.O + ray.t * ray.D;
 	float3 N = scene.GetNormal(ray.objIdx, I, ray.D);
@@ -207,9 +207,9 @@ float3 Renderer::Path(Ray& ray, int iter = 0) {
 		if (ray.media == Glass) k = 1 - pow(refractive[GlassToAir], 2) * (1 - pow(cos1, 2));
 
 		if (k < 0) {
-			float3 reflDirection = normalize(reflect(ray.D, N));
+			float3 reflectRayDir = normalize(reflect(ray.D, N));
 
-			Ray reflectRay = Ray(I + reflDirection * 0.001, reflDirection, 10000, ray.media);
+			Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, 10000, ray.media);
 			color_accum = Path(reflectRay, iter + 1);
 		}
 		else {
@@ -281,10 +281,10 @@ void Renderer::Tick(float deltaTime)
 		// trace a primary ray for each pixel on the line
 		for (int x = 0; x < SCRWIDTH; x++)
 		{
-			//float3 color = float3(0);
+			float3 color = float3(0);
 			////color = Trace(camera.GetPrimaryRay(x, y));
 
-			////anti-aliasing
+			//anti-aliasing
 			//color = color + Trace(camera.GetPrimaryRay(x + 0.25, y + 0.1));
 			//color = color + Trace(camera.GetPrimaryRay(x - 0.25, y - 0.1));
 			//color = color + Trace(camera.GetPrimaryRay(x + 0.1, y - 0.25));
