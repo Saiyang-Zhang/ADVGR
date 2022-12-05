@@ -8,12 +8,7 @@ void Renderer::Init()
 	// create fp32 rgb pixel buffer to render to
 	accumulator = (float4*)MALLOC64(SCRWIDTH * SCRHEIGHT * 16);
 	memset(accumulator, 0, SCRWIDTH * SCRHEIGHT * 16);
-
-
-	anti_aliasing = true;
-	raysPerPixel = 8;
-	pixelWidth = (float)length(camera.topRight - camera.topLeft) / (float)SCRWIDTH;
-	pixelHeight = (float)length(camera.topLeft - camera.bottomLeft) / (float)SCRHEIGHT;
+	srand(time(0));
 }
 
 // -----------------------------------------------------------
@@ -26,9 +21,9 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	
 	float3 I = ray.O + ray.t * ray.D;
 	float3 N = scene.GetNormal(ray.objIdx, I, ray.D);
-	float3 shadowRayDirection = scene.GetLightPos() - I;
-	float distance = length(shadowRayDirection);
-	Ray shadowray = Ray(I + shadowRayDirection * 0.001, normalize(shadowRayDirection), distance, ray.color, ray.media);
+	float3 shadowRayDir = normalize(scene.GetLightPos() - I);
+	float distance = length(scene.GetLightPos() - I);
+	Ray shadowray = Ray(I + shadowRayDir * 0.001, shadowRayDir, distance, ray.color, ray.media);
 	float3 albedo = scene.GetAlbedo(ray.objIdx, I);
 	float cos1 = dot(N, -ray.D);
 
@@ -36,8 +31,8 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	float3 color = scene.GetLightColor(ray.objIdx);
 	if (scene.IsOccluded(shadowray)) {
 		if (mat == Mirror) {
-			float3 reflDirection = reflect(ray.D, N);
-			Ray mirrorRay = Ray(I + reflDirection * 0.001, normalize(reflDirection));
+			float3 reflectRayDir = normalize(reflect(ray.D, N));
+			Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir);
 			return color * Trace(mirrorRay, iter + 1);
 		}
 		if (mat == Glass) {
@@ -50,8 +45,8 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 		return color / distance;
 	}
 	if (mat == Mirror) {
-		float3 reflDirection = reflect(ray.D, N);
-		Ray mirrorRay = Ray(I + reflDirection * 0.001, normalize(reflDirection), 10000, float3(1), Air);
+		float3 reflectRayDir = normalize(reflect(ray.D, N));
+		Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, 10000, float3(1), Air);
 		return color * Trace(mirrorRay, iter + 1);
 	}	
 	if (mat == Glass) 
@@ -104,22 +99,24 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 float3 Renderer::PathTrace(Ray& ray, int iter = 0, int n = 100) {
 	int i = 0;
 	float3 color_accumulated = float3(0);
-	for (i = 0; i < n; i++) {
-		scene.FindNearest(ray);
-		if (ray.objIdx == -1 || iter > 5) return 0; // or a fancy sky color
+	scene.FindNearest(ray);
+	if (ray.objIdx == -1 || iter > 5) return 0; // or a fancy sky color
 
-		float3 I = ray.O + ray.t * ray.D;
-		float3 N = scene.GetNormal(ray.objIdx, I, ray.D);
-		float3 bounceRayDir = scene.GetLightPos() - I;
-		float distance = length(bounceRayDir);
-		Ray bounceRay = Ray(I + bounceRayDir * 0.001, normalize(bounceRayDir), distance, ray.color, ray.media);
-		float3 albedo = scene.GetAlbedo(ray.objIdx, I);
-		float cos1 = dot(N, -ray.D);
+	float3 I = ray.O + ray.t * ray.D;
+	float3 N = scene.GetNormal(ray.objIdx, I, ray.D);
+	float3 albedo = scene.GetAlbedo(ray.objIdx, I);
+	float cos1 = dot(N, -ray.D);
 
-		MatType mat = scene.GetObjMat(ray.objIdx);
-		float3 color = scene.GetLightColor(ray.objIdx);
-		return color;
-	}
+	MatType mat = scene.GetObjMat(ray.objIdx);
+	float3 color = scene.GetLightColor(ray.objIdx);
+//#	pragma omp parallel for schedule(dynamic)
+//	for (i = 0; i < n; i++) {
+//		float3 bounceRayDir = normalize(N + random_in_uint_sphere());
+//		Ray bounceRay = Ray(I + bounceRayDir * 0.001, bounceRayDir, 10000, ray.color, ray.media);
+//
+//		
+//	}
+	return color;
 }
 
 float Renderer::DirectIllumination(float3& I) {
@@ -157,17 +154,20 @@ void Renderer::Tick(float deltaTime)
 		// trace a primary ray for each pixel on the line
 		for (int x = 0; x < SCRWIDTH; x++)
 		{
-			float3 color = float3(0);
-			//color = Trace(camera.GetPrimaryRay(x, y));
+			//float3 color = float3(0);
+			////color = Trace(camera.GetPrimaryRay(x, y));
 
-			//anti-aliasing
-			color = color + Trace(camera.GetPrimaryRay(x + 0.25, y + 0.1));
-			color = color + Trace(camera.GetPrimaryRay(x - 0.25, y - 0.1));
-			color = color + Trace(camera.GetPrimaryRay(x + 0.1, y - 0.25));
-			color = color + Trace(camera.GetPrimaryRay(x - 0.1, y + 0.25));
-			color = 0.25 * color;
+			////anti-aliasing
+			//color = color + Trace(camera.GetPrimaryRay(x + 0.25, y + 0.1));
+			//color = color + Trace(camera.GetPrimaryRay(x - 0.25, y - 0.1));
+			//color = color + Trace(camera.GetPrimaryRay(x + 0.1, y - 0.25));
+			//color = color + Trace(camera.GetPrimaryRay(x - 0.1, y + 0.25));
+			//color = 0.25 * color;
+			//accumulator[x + y * SCRWIDTH] =
+			//float4(color, 0);
+
 			accumulator[x + y * SCRWIDTH] =
-			float4(color, 0);
+				float4(PathTrace(camera.GetPrimaryRay(x, y)), 0);
 		}
 			
 		// translate accumulator contents to rgb32 pixels

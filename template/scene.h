@@ -55,6 +55,17 @@ namespace Tmpl8 {
 		{GlassToWater, 1.125}
 	};
 
+	inline float3 random_in_uint_sphere() {
+		while (true) {
+			float3 result;
+			float x = rand() * (2.0 / RAND_MAX) - 1.0;
+			float y = rand() * (2.0 / RAND_MAX) - 1.0;
+			float z = rand() * (2.0 / RAND_MAX) - 1.0;
+			result = float3(x, y, z);
+			if(length(result) <= 1.0) return result;
+		}
+	}
+
 	__declspec(align(64)) class Ray
 	{
 	public:
