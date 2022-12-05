@@ -9,7 +9,8 @@ namespace Tmpl8
 		// game flow methods
 		void Init();
 		float3 Trace(Ray& ray, int iter);
-		float3 PathTrace(Ray& ray, int iter, int n);
+		float3 PathTrace(Ray& ray, int n);
+		float3 Path(Ray& ray, int iter);
 		float DirectIllumination(float3& I);
 		float3 Absorb(float3 color, float d, float3 absorpMat);
 		void Tick(float deltaTime);

@@ -403,7 +403,7 @@ namespace Tmpl8 {
 			plane[0] = Plane(4, float3(1, 0, 0), 3, red, Diffuse);									// 4: left wall
 			plane[1] = Plane(5, float3(-1, 0, 0), 2.99f, blue, Diffuse);								// 5: right wall
 			plane[2] = Plane(6, float3(0, 1, 0), 1, white, Diffuse);									// 6: floor
-			plane[3] = Plane(7, float3(0, -1, 0), 2, green, Diffuse);									// 7: ceiling
+			plane[3] = Plane(7, float3(0, -1, 0), 2, white, Diffuse);									// 7: ceiling
 			plane[4] = Plane(8, float3(0, 0, 1), 3, green, Diffuse);									// 8: front wall
 			plane[5] = Plane(9, float3(0, 0, -1), 3.99f, white, Diffuse);								// 9: back wall
 			triangle = Triangle(10, float3(1, 1, 1.5), float3(-1, 1, 1.5), float3(0, 0.1, 1.5), purple, Diffuse);
