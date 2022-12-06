@@ -211,7 +211,7 @@ void Renderer::Tick(float deltaTime)
 //	}
 
 ////fixed sampling
-//	int i, sample = 32;
+//	int i, fsample = 4;
 //
 //	// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
 //#	pragma omp parallel for schedule(dynamic)
@@ -221,11 +221,11 @@ void Renderer::Tick(float deltaTime)
 //		for (int x = 0; x < SCRWIDTH; x++)
 //		{
 //			float3 color = float3(0);
-//			for (i = 0; i < sample; i++) {
+//			for (i = 0; i < fsample; i++) {
 //				color += PathTrace(camera.GetPrimaryRay(x, y));
 //			}
 //
-//			color *= BRIGHTNESS / (float)sample;
+//			color *= BRIGHTNESS / (float)fsample;
 //
 //			accumulator[x + y * SCRWIDTH] =
 //				float4(color, 0);
