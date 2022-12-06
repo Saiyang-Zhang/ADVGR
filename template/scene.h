@@ -60,6 +60,10 @@ namespace Tmpl8 {
 		return float3(sqrt(vector.x), sqrt(vector.y), sqrt(vector.z));
 	}
 
+	inline float3 mix(float3 x, float3 y, float a) {
+		return (1 - a) * x + a * y;
+	}
+
 	inline float3 random_in_uint_sphere() {
 		while (true) {
 			float3 result;
