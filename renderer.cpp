@@ -21,6 +21,8 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	
 	float3 I = ray.O + ray.t * ray.D;
 	float3 N = scene.GetNormal(ray.objIdx, I, ray.D);
+	float cos1 = dot(N, -ray.D);
+
 	float3 shadowRayDir = normalize(scene.GetLightPos() - I);
 	float distance = length(scene.GetLightPos() - I);
 	Ray shadowray = Ray(I + shadowRayDir * 0.001, shadowRayDir, distance, ray.media);
@@ -35,7 +37,7 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 			return color * Trace(mirrorRay, iter + 1);
 		}
 		if (mat == Glass) {
-
+			
 		}
 		else return 0.0f;
 	}
@@ -50,7 +52,6 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	}	
 	if (mat == Glass) 
 	{	
-		float cos1 = dot(N, -ray.D);
 		float3 reflectRayDir = normalize(reflect(ray.D, N));
 		Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, 10000, ray.media);
 		
@@ -88,7 +89,7 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	return color;
 }
 
-float3 Renderer::PathTrace(Ray& ray, int sample = 128) {
+float3 Renderer::PathTrace(Ray& ray, int sample = 1024) {
 	scene.FindNearest(ray);
 	MatType mat = scene.GetObjMat(ray.objIdx);
 	float3 color = scene.GetLightColor(ray.objIdx);
@@ -150,7 +151,7 @@ float3 Renderer::PathTrace(Ray& ray, int sample = 128) {
 		color_accum += bounceColor;
 	}
 	color_accum *= 1.0 / sample;
-	return fsqrt( color * color_accum );
+	return BRIGHTNESS * color * color_accum;
 }
 
 float3 Renderer::Path(Ray& ray, float iter = 0) {
@@ -159,7 +160,7 @@ float3 Renderer::Path(Ray& ray, float iter = 0) {
 	float3 color = scene.GetLightColor(ray.objIdx);
 
 	if (mat == Light) return color;
-	if (ray.objIdx == -1 || iter > 4) return 0; // or a fancy sky color
+	if (ray.objIdx == -1 || iter > 8) return 0; // or a fancy sky color
 
 	double r = rand() * (1.0 / RAND_MAX);
 	float P = 0.8;
@@ -167,6 +168,7 @@ float3 Renderer::Path(Ray& ray, float iter = 0) {
 
 	float3 I = ray.O + ray.t * ray.D;
 	float3 N = scene.GetNormal(ray.objIdx, I, ray.D);
+	float cos1 = dot(N, -ray.D);
 	float3 color_accum = float3(0);
 
 	float3 bounceRayDir = normalize(N + random_in_uint_sphere());
@@ -175,20 +177,19 @@ float3 Renderer::Path(Ray& ray, float iter = 0) {
 	
 	//float3 albedo = scene.GetAlbedo(ray.objIdx, I);
 
-	if (mat == Basic) return 1.25 * color;
+	if (mat == Basic) return 1.25 * cos1 * color;
 
 	if (mat == Diffuse) {
-		return 1.25 * color * Path(bounceRay, iter + 1);
+		return 1.25 * cos1 * color * Path(bounceRay, iter + 1);
 	}
 
 	if (mat == Mirror) {
 		float3 reflectRayDir = normalize(reflect(ray.D, N));
 		Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir);
-		return 1.25 * color * Path(mirrorRay, iter+1);
+		return 1.25 * cos1 * color * Path(mirrorRay, iter+1);
 	}
 	if (mat == Glass)
 	{
-		float cos1 = dot(N, -ray.D);
 		float3 reflectRayDir = normalize(reflect(ray.D, N));
 		Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, 10000, ray.media);
 
@@ -205,11 +206,11 @@ float3 Renderer::Path(Ray& ray, float iter = 0) {
 			float Fr = 0.5 * ((pow((cos1 - refractive[GlassToAir] * cos2) / (cos1 + refractive[GlassToAir] * cos2), 2)) + (pow((cos2 - refractive[GlassToAir] * cos1) / (cos2 + refractive[GlassToAir] * cos1), 2)));
 			float Ft = 1 - Fr;
 
-			return Absorb(Path(refractRay, iter + 1) * Ft, ray.t, color * 0.1) + Path(reflectRay, iter + 1) * Fr;
+			return cos1 * (Absorb(Path(refractRay, iter + 1) * Ft, ray.t, color * 0.1) + Path(reflectRay, iter + 1) * Fr);
 		}
 		if (ray.media == Glass) {
 			k = 1 - pow(refractive[GlassToAir], 2) * (1 - pow(cos1, 2));
-			if (k < 0) return Path(reflectRay, iter + 1);
+			if (k < 0) return cos1 * Path(reflectRay, iter + 1);
 			else {
 				cos2 = sqrt(1 - pow(refractive[GlassToAir] * sqrt(1 - pow(cos1, 2)), 2));
 
@@ -219,18 +220,10 @@ float3 Renderer::Path(Ray& ray, float iter = 0) {
 				float Fr = 0.5 * ((pow((refractive[GlassToAir] * cos1 - cos2) / (refractive[GlassToAir] * cos1 + cos2), 2)) + (pow((refractive[GlassToAir] * cos2 - cos1) / (refractive[GlassToAir] * cos2 + cos1), 2)));
 				float Ft = 1 - Fr;
 
-				return Path(refractRay, iter + 1) * Ft + Path(reflectRay, iter + 1) * Fr;
+				return cos1 * (Path(refractRay, iter + 1) * Ft + Path(reflectRay, iter + 1) * Fr);
 			}
 		}
 	}
-}
-
-float Renderer::DirectIllumination(float3& I) {
-	float3 shadowRayDirection = scene.GetLightPos() - I;
-	float distance = length(shadowRayDirection);
-	Ray shadowray = Ray(I + shadowRayDirection * 0.001, normalize(shadowRayDirection), distance);
-	if (scene.IsOccluded(shadowray)) return 0.0f;
-	else return 1.0f / distance;
 }
 
 float3 Renderer::Absorb(float3 color, float distance, float3 absorption)
@@ -261,7 +254,6 @@ void Renderer::Tick(float deltaTime)
 		// trace a primary ray for each pixel on the line
 		for (int x = 0; x < SCRWIDTH; x++)
 		{
-			
 			//color = Trace(camera.GetPrimaryRay(x, y));
 
 			//anti-aliasing
@@ -274,7 +266,7 @@ void Renderer::Tick(float deltaTime)
 			//float4(color, 0);
 
 			accumulator[x + y * SCRWIDTH] =
-				float4(PathTrace(camera.GetPrimaryRay(x, y)));
+				float4(PathTrace(camera.GetPrimaryRay(x, y)), 0);
 		}
 			
 		// translate accumulator contents to rgb32 pixels

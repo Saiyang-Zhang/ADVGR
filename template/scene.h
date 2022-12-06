@@ -25,6 +25,7 @@
 #define PLANE_Z(o,i) {if((t=-(ray.O.z+o)*ray.rD.z)<ray.t)ray.t=t,ray.objIdx=i;}
 
 namespace Tmpl8 {
+	const double BRIGHTNESS = 2.0f * 3.1415926f;
 	 
 	enum MatType {
 		Air,

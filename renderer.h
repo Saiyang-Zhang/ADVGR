@@ -11,7 +11,6 @@ namespace Tmpl8
 		float3 Trace(Ray& ray, int iter);
 		float3 PathTrace(Ray& ray, int n);
 		float3 Path(Ray& ray, float iter);
-		float DirectIllumination(float3& I);
 		float3 Absorb(float3 color, float d, float3 absorpMat);
 		void Tick(float deltaTime);
 		void Shutdown() { /* implement if you want to do something on exit */ }
