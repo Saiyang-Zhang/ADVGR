@@ -25,7 +25,6 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	float distance = length(scene.GetLightPos() - I);
 	Ray shadowray = Ray(I + shadowRayDir * 0.001, shadowRayDir, distance, ray.media);
 	float3 albedo = scene.GetAlbedo(ray.objIdx, I);
-	float cos1 = dot(N, -ray.D);
 
 	MatType mat = scene.GetObjMat(ray.objIdx);
 	float3 color = scene.GetLightColor(ray.objIdx);
@@ -51,6 +50,7 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	}	
 	if (mat == Glass) 
 	{	
+		float cos1 = dot(N, -ray.D);
 		float3 reflectRayDir = normalize(reflect(ray.D, N));
 		Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, 10000, ray.media);
 		
@@ -125,14 +125,18 @@ float3 Renderer::PathTrace(Ray& ray, int sample = 128) {
 
 		float3 reflectRayDir = normalize(reflect(ray.D, N));
 
-		Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, 10000, ray.media);
+		Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, 10000, Air);
 
 		k = 1 - pow(refractive[AirToGlass], 2) * (1 - pow(cos1, 2));
 		cos2 = sqrt(1 - pow(refractive[AirToGlass] * sqrt(1 - pow(cos1, 2)), 2));
 
 		float3 refractRayDir = normalize(-cos2 * N + refractive[AirToGlass] * (ray.D + cos1 * N));
 		Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, 10000, Glass);
-		return Path(reflectRay, 0) * Path(refractRay, 0);
+		
+		float Fr = 0.5 * ((pow((cos1 - refractive[GlassToAir] * cos2) / (cos1 + refractive[GlassToAir] * cos2), 2)) + (pow((cos2 - refractive[GlassToAir] * cos1) / (cos2 + refractive[GlassToAir] * cos1), 2)));
+		float Ft = 1 - Fr;
+
+		return Absorb(Path(refractRay, 0) * Ft, ray.t, color * 0.1) + Path(reflectRay, 0) * Fr;
 	}
 		
 	int i;
@@ -185,25 +189,38 @@ float3 Renderer::Path(Ray& ray, float iter = 0) {
 	if (mat == Glass)
 	{
 		float cos1 = dot(N, -ray.D);
-		float k;
-		float cos2;
-
 		float3 reflectRayDir = normalize(reflect(ray.D, N));
-
 		Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, 10000, ray.media);
 
-		if (ray.media == Air) {
-			k = 1 - pow(refractive[AirToGlass], 2) * (1 - pow(cos1, 2));
+		float k;
+		float cos2;
+		if (ray.media == Air)
+		{
 			cos2 = sqrt(1 - pow(refractive[AirToGlass] * sqrt(1 - pow(cos1, 2)), 2));
+			k = 1 - pow(refractive[AirToGlass], 2) * (1 - pow(cos1, 2));
 
 			float3 refractRayDir = normalize(-cos2 * N + refractive[AirToGlass] * (ray.D + cos1 * N));
 			Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, 10000, Glass);
-			return 1.5625 * Path(reflectRay) * Path(refractRay);
+
+			float Fr = 0.5 * ((pow((cos1 - refractive[GlassToAir] * cos2) / (cos1 + refractive[GlassToAir] * cos2), 2)) + (pow((cos2 - refractive[GlassToAir] * cos1) / (cos2 + refractive[GlassToAir] * cos1), 2)));
+			float Ft = 1 - Fr;
+
+			return Absorb(Path(refractRay, iter + 1) * Ft, ray.t, color * 0.1) + Path(reflectRay, iter + 1) * Fr;
 		}
 		if (ray.media == Glass) {
 			k = 1 - pow(refractive[GlassToAir], 2) * (1 - pow(cos1, 2));
-			if (k < 0) return 1.25 * Path(reflectRay, iter + 1);
-			else return 1.5625 * Path(reflectRay, iter + 1) * Path(bounceRay, iter + 1);
+			if (k < 0) return Path(reflectRay, iter + 1);
+			else {
+				cos2 = sqrt(1 - pow(refractive[GlassToAir] * sqrt(1 - pow(cos1, 2)), 2));
+
+				float3 refractRayDir = normalize(-cos2 * N + refractive[GlassToAir] * (ray.D + cos1 * N));
+				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, 10000, Air);
+
+				float Fr = 0.5 * ((pow((refractive[GlassToAir] * cos1 - cos2) / (refractive[GlassToAir] * cos1 + cos2), 2)) + (pow((refractive[GlassToAir] * cos2 - cos1) / (refractive[GlassToAir] * cos2 + cos1), 2)));
+				float Ft = 1 - Fr;
+
+				return Path(refractRay, iter + 1) * Ft + Path(reflectRay, iter + 1) * Fr;
+			}
 		}
 	}
 }
