@@ -9,6 +9,7 @@ void Renderer::Init()
 	accumulator = (float4*)MALLOC64(SCRWIDTH * SCRHEIGHT * 16);
 	memset(accumulator, 0, SCRWIDTH * SCRHEIGHT * 16);
 	srand(time(0));
+	sample = 1;
 }
 
 // -----------------------------------------------------------
@@ -89,72 +90,7 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	return color;
 }
 
-float3 Renderer::PathTrace(Ray& ray, int sample = 1024) {
-	scene.FindNearest(ray);
-	MatType mat = scene.GetObjMat(ray.objIdx);
-	float3 color = scene.GetLightColor(ray.objIdx);
-
-	if (mat == Light) return color;
-	if (ray.objIdx == -1) return 0; // or a fancy sky color
-
-	float3 I = ray.O + ray.t * ray.D;
-	float3 N = scene.GetNormal(ray.objIdx, I, ray.D);
-	float3 color_accum = float3(0);
-
-	float3 bounceRayDir = normalize(N + random_in_uint_sphere());
-	float bounceCos = -dot(ray.D, bounceRayDir);
-	Ray bounceRay = Ray(I + bounceRayDir * 0.001, bounceRayDir, 10000, ray.media);
-
-	//float3 albedo = scene.GetAlbedo(ray.objIdx, I);
-
-	if (mat == Basic) return color;
-
-	if (mat == Diffuse) {
-		return color * Path(bounceRay, 0);
-	}
-	
-	if (mat == Mirror) {
-		float3 reflectRayDir = normalize(reflect(ray.D, N));
-		Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir);
-		return color * Path(mirrorRay, 0);
-	}
-	if (mat == Glass)
-	{
-		float cos1 = dot(N, -ray.D);
-		float k;
-		float cos2;
-
-		float3 reflectRayDir = normalize(reflect(ray.D, N));
-
-		Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, 10000, Air);
-
-		k = 1 - pow(refractive[AirToGlass], 2) * (1 - pow(cos1, 2));
-		cos2 = sqrt(1 - pow(refractive[AirToGlass] * sqrt(1 - pow(cos1, 2)), 2));
-
-		float3 refractRayDir = normalize(-cos2 * N + refractive[AirToGlass] * (ray.D + cos1 * N));
-		Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, 10000, Glass);
-		
-		float Fr = 0.5 * ((pow((cos1 - refractive[GlassToAir] * cos2) / (cos1 + refractive[GlassToAir] * cos2), 2)) + (pow((cos2 - refractive[GlassToAir] * cos1) / (cos2 + refractive[GlassToAir] * cos1), 2)));
-		float Ft = 1 - Fr;
-
-		return Absorb(Path(refractRay, 0) * Ft, ray.t, color * 0.1) + Path(reflectRay, 0) * Fr;
-	}
-		
-	int i;
-#	pragma omp parallel for schedule(dynamic)
-	for (i = 0; i < sample; i++) {
-		float3 bounceRayDir = normalize(N + random_in_uint_sphere());
-		float bounceCos = -dot(ray.D, bounceRayDir);
-		Ray bounceRay = Ray(I + bounceRayDir * 0.001, bounceRayDir, 10000, ray.media);
-
-		float3 bounceColor = Path(bounceRay, 0);
-		color_accum += bounceColor;
-	}
-	color_accum *= 1.0 / sample;
-	return BRIGHTNESS * color * color_accum;
-}
-
-float3 Renderer::Path(Ray& ray, float iter = 0) {
+float3 Renderer::PathTrace(Ray& ray, float iter = 0) {
 	scene.FindNearest(ray);
 	MatType mat = scene.GetObjMat(ray.objIdx);
 	float3 color = scene.GetLightColor(ray.objIdx);
@@ -180,13 +116,13 @@ float3 Renderer::Path(Ray& ray, float iter = 0) {
 	if (mat == Basic) return 1.25 * cos1 * color;
 
 	if (mat == Diffuse) {
-		return 1.25 * cos1 * color * Path(bounceRay, iter + 1);
+		return 1.25 * cos1 * color * PathTrace(bounceRay, iter + 1);
 	}
 
 	if (mat == Mirror) {
 		float3 reflectRayDir = normalize(reflect(ray.D, N));
 		Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir);
-		return 1.25 * cos1 * color * Path(mirrorRay, iter+1);
+		return 1.25 * cos1 * color * PathTrace(mirrorRay, iter+1);
 	}
 	if (mat == Glass)
 	{
@@ -206,11 +142,11 @@ float3 Renderer::Path(Ray& ray, float iter = 0) {
 			float Fr = 0.5 * ((pow((cos1 - refractive[GlassToAir] * cos2) / (cos1 + refractive[GlassToAir] * cos2), 2)) + (pow((cos2 - refractive[GlassToAir] * cos1) / (cos2 + refractive[GlassToAir] * cos1), 2)));
 			float Ft = 1 - Fr;
 
-			return cos1 * (Absorb(Path(refractRay, iter + 1) * Ft, ray.t, color * 0.1) + Path(reflectRay, iter + 1) * Fr);
+			return 1.25 * cos1 * (Absorb(PathTrace(refractRay, iter + 1) * Ft, ray.t, color * 0.1) + PathTrace(reflectRay, iter + 1) * Fr);
 		}
 		if (ray.media == Glass) {
 			k = 1 - pow(refractive[GlassToAir], 2) * (1 - pow(cos1, 2));
-			if (k < 0) return cos1 * Path(reflectRay, iter + 1);
+			if (k < 0) return 1.25 * cos1 * PathTrace(reflectRay, iter + 1);
 			else {
 				cos2 = sqrt(1 - pow(refractive[GlassToAir] * sqrt(1 - pow(cos1, 2)), 2));
 
@@ -220,7 +156,7 @@ float3 Renderer::Path(Ray& ray, float iter = 0) {
 				float Fr = 0.5 * ((pow((refractive[GlassToAir] * cos1 - cos2) / (refractive[GlassToAir] * cos1 + cos2), 2)) + (pow((refractive[GlassToAir] * cos2 - cos1) / (refractive[GlassToAir] * cos2 + cos1), 2)));
 				float Ft = 1 - Fr;
 
-				return cos1 * (Path(refractRay, iter + 1) * Ft + Path(reflectRay, iter + 1) * Fr);
+				return 1.25 * cos1 * (PathTrace(refractRay, iter + 1) * Ft + PathTrace(reflectRay, iter + 1) * Fr);
 			}
 		}
 	}
@@ -245,8 +181,64 @@ void Renderer::Tick(float deltaTime)
 	scene.SetTime(animTime += deltaTime * 0.002f);
 	// pixel loop
 	Timer t;
-	float3 color = float3(0);
 
+//	//whitted
+//	// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
+//#	pragma omp parallel for schedule(dynamic)
+//	for (int y = 0; y < SCRHEIGHT; y++)
+//	{
+//		// trace a primary ray for each pixel on the line
+//		for (int x = 0; x < SCRWIDTH; x++)
+//		{
+//			float3 color = float3(0);
+//			//color = Trace(camera.GetPrimaryRay(x, y));
+//
+//			//anti-aliasing
+//			color = color + Trace(camera.GetPrimaryRay(x + 0.25, y + 0.1));
+//			color = color + Trace(camera.GetPrimaryRay(x - 0.25, y - 0.1));
+//			color = color + Trace(camera.GetPrimaryRay(x + 0.1, y - 0.25));
+//			color = color + Trace(camera.GetPrimaryRay(x - 0.1, y + 0.25));
+//			color = 0.25 * color;
+//
+//			accumulator[x + y * SCRWIDTH] =
+//				float4(color, 0);
+//		}
+//
+//		// translate accumulator contents to rgb32 pixels
+//		for (int dest = y * SCRWIDTH, x = 0; x < SCRWIDTH; x++)
+//			screen->pixels[dest + x] =
+//			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
+//	}
+
+////fixed sampling
+//	int i, sample = 32;
+//
+//	// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
+//#	pragma omp parallel for schedule(dynamic)
+//	for (int y = 0; y < SCRHEIGHT; y++)
+//	{
+//		// trace a primary ray for each pixel on the line
+//		for (int x = 0; x < SCRWIDTH; x++)
+//		{
+//			float3 color = float3(0);
+//			for (i = 0; i < sample; i++) {
+//				color += PathTrace(camera.GetPrimaryRay(x, y));
+//			}
+//
+//			color *= BRIGHTNESS / (float)sample;
+//
+//			accumulator[x + y * SCRWIDTH] =
+//				float4(color, 0);
+//		}
+//			
+//		// translate accumulator contents to rgb32 pixels
+//		for (int dest = y * SCRWIDTH, x = 0; x < SCRWIDTH; x++)
+//			screen->pixels[dest + x] =
+//			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
+//	}
+
+//real-time sampling
+	printf("sample: %f\n", sample);
 	// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
 #	pragma omp parallel for schedule(dynamic)
 	for (int y = 0; y < SCRHEIGHT; y++)
@@ -254,26 +246,18 @@ void Renderer::Tick(float deltaTime)
 		// trace a primary ray for each pixel on the line
 		for (int x = 0; x < SCRWIDTH; x++)
 		{
-			//color = Trace(camera.GetPrimaryRay(x, y));
+			float3 color = PathTrace(camera.GetPrimaryRay(x, y));
 
-			//anti-aliasing
-			//color = color + Trace(camera.GetPrimaryRay(x + 0.25, y + 0.1));
-			//color = color + Trace(camera.GetPrimaryRay(x - 0.25, y - 0.1));
-			//color = color + Trace(camera.GetPrimaryRay(x + 0.1, y - 0.25));
-			//color = color + Trace(camera.GetPrimaryRay(x - 0.1, y + 0.25));
-			//color = 0.25 * color;
-			//accumulator[x + y * SCRWIDTH] =
-			//float4(color, 0);
-
-			accumulator[x + y * SCRWIDTH] =
-				float4(PathTrace(camera.GetPrimaryRay(x, y)), 0);
+			accumulator[x + y * SCRWIDTH] *= (sample - 1) / sample;
+			accumulator[x + y * SCRWIDTH] += float4(color * (BRIGHTNESS / sample), 0);
 		}
-			
+
 		// translate accumulator contents to rgb32 pixels
 		for (int dest = y * SCRWIDTH, x = 0; x < SCRWIDTH; x++)
 			screen->pixels[dest + x] =
 			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
 	}
+	sample++;
 	
 	// in game control
 	if (GetKeyState('A') < 0) camera.Translate(float3(0.1, 0, 0));
