@@ -28,6 +28,7 @@ namespace Tmpl8
 		float4* accumulator;
 		Scene scene;
 		Camera camera;
+		//This is the counter for real time sampling for path tracing
 		float sample;
 	};
 

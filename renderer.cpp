@@ -9,6 +9,7 @@ void Renderer::Init()
 	accumulator = (float4*)MALLOC64(SCRWIDTH * SCRHEIGHT * 16);
 	memset(accumulator, 0, SCRWIDTH * SCRHEIGHT * 16);
 	srand(time(0));
+	//This is the counter for real time sampling for path tracing
 	sample = 1;
 	TriangleMesh a = TriangleMesh("assets/pyramid.obj");
 	printf("vertex: %d, triangles\n", a.vertices.size(), a.triangles.size());
@@ -100,6 +101,8 @@ float3 Renderer::PathTrace(Ray& ray, float iter = 0) {
 	if (mat == Light) return color;
 	if (ray.objIdx == -1 || iter > 8) return 0; // or a fancy sky color
 
+	//In order to reduce too many recursion, we use this method to randomly decide whether one ray
+	//should stop bouncing between objects. Here the probability of keeping the ray is P = 0.8
 	double r = rand() * (1.0 / RAND_MAX);
 	float P = 0.8;
 	if (r > P) return float3(0);
@@ -109,16 +112,20 @@ float3 Renderer::PathTrace(Ray& ray, float iter = 0) {
 	float cos1 = dot(N, -ray.D);
 	float3 color_accum = float3(0);
 
-	float3 bounceRayDir = normalize(N + random_in_uint_sphere());
-	float bounceCos = -dot(ray.D, bounceRayDir);
-	Ray bounceRay = Ray(I + bounceRayDir * 0.001, bounceRayDir, 10000, ray.media);
+	//Choose the random ray that bounce between objects to implement the environment lighting
+	float3 randomRayDir = normalize(N + random_in_uint_sphere());
+	float bounceCos = -dot(ray.D, randomRayDir);
+	Ray randomRay = Ray(I + randomRayDir * 0.001, randomRayDir, 10000, ray.media);
 	
 	//float3 albedo = scene.GetAlbedo(ray.objIdx, I);
 
+	//Basic material is for testing, will still be referred to in future development
 	if (mat == Basic) return 1.25 * cos1 * color;
 
+	//To make the expectation of the color even, we need to divide the result by P. And to avoid
+	//division (I remember that this is more costly), we multiply the color by reciprocal of P
 	if (mat == Diffuse) {
-		return 1.25 * cos1 * color * PathTrace(bounceRay, iter + 1);
+		return 1.25 * cos1 * color * PathTrace(randomRay, iter + 1);
 	}
 
 	if (mat == Mirror) {
@@ -184,7 +191,7 @@ void Renderer::Tick(float deltaTime)
 	// pixel loop
 	Timer t;
 
-	//whitted
+	//1. Whitted-style ray-tracing, uncomment this and comment 2. 3. to render this way
 	// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
 #	pragma omp parallel for schedule(dynamic)
 	for (int y = 0; y < SCRHEIGHT; y++)
@@ -193,14 +200,14 @@ void Renderer::Tick(float deltaTime)
 		for (int x = 0; x < SCRWIDTH; x++)
 		{
 			float3 color = float3(0);
-			color = Trace(camera.GetPrimaryRay(x, y));
+			//color = Trace(camera.GetPrimaryRay(x, y));
 
-			////anti-aliasing
-			//color = color + Trace(camera.GetPrimaryRay(x + 0.25, y + 0.1));
-			//color = color + Trace(camera.GetPrimaryRay(x - 0.25, y - 0.1));
-			//color = color + Trace(camera.GetPrimaryRay(x + 0.1, y - 0.25));
-			//color = color + Trace(camera.GetPrimaryRay(x - 0.1, y + 0.25));
-			//color = 0.25 * color;
+			//anti-aliasing
+			color = color + Trace(camera.GetPrimaryRay(x + 0.25, y + 0.1));
+			color = color + Trace(camera.GetPrimaryRay(x - 0.25, y - 0.1));
+			color = color + Trace(camera.GetPrimaryRay(x + 0.1, y - 0.25));
+			color = color + Trace(camera.GetPrimaryRay(x - 0.1, y + 0.25));
+			color = 0.25 * color;
 
 			accumulator[x + y * SCRWIDTH] =
 				float4(color, 0);
@@ -212,7 +219,7 @@ void Renderer::Tick(float deltaTime)
 			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
 	}
 
-////fixed sampling
+////2. Fixed sampling for path tracing, uncomment this and comment 1. 3. to render this way
 //	int i, fsample = 4;
 //
 //	// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
@@ -239,7 +246,7 @@ void Renderer::Tick(float deltaTime)
 //			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
 //	}
 
-////real-time sampling
+////3. Real-time sampling for path tracing, uncomment this and comment 1. 2. to render this way
 //	printf("sample: %f\n", sample);
 //	// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
 //#	pragma omp parallel for schedule(dynamic)
@@ -259,6 +266,7 @@ void Renderer::Tick(float deltaTime)
 //			screen->pixels[dest + x] =
 //			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
 //	}
+////Each time you run this, 
 //	sample++;
 	
 	// in game control
