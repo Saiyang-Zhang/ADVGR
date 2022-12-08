@@ -123,7 +123,7 @@ float3 Renderer::PathTrace(Ray& ray, float iter = 0) {
 	if (mat == Basic) return 1.25 * cos1 * color;
 
 	//To make the expectation of the color even, we need to divide the result by P. And to avoid
-	//division (I remember that this is more costly), we multiply the color by reciprocal of P
+	//division, we multiply the color by reciprocal of P
 	if (mat == Diffuse) {
 		return 1.25 * cos1 * color * PathTrace(randomRay, iter + 1);
 	}
@@ -247,6 +247,7 @@ void Renderer::Tick(float deltaTime)
 //	}
 
 ////3. Real-time sampling for path tracing, uncomment this and comment 1. 2. to render this way
+////(in game control is hardly usable here).
 //	printf("sample: %f\n", sample);
 //	// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
 //#	pragma omp parallel for schedule(dynamic)
@@ -270,15 +271,25 @@ void Renderer::Tick(float deltaTime)
 //	sample++;
 	
 	// in game control
+	//Move left
 	if (GetKeyState('A') < 0) camera.Translate(float3(0.1, 0, 0));
+	//Move right
 	if (GetKeyState('D') < 0) camera.Translate(float3(-0.1, 0, 0));
+	//Move backward
 	if (GetKeyState('S') < 0) camera.Translate(float3(0, 0, 0.1));
+	//Move forward
 	if (GetKeyState('W') < 0) camera.Translate(float3(0, 0, -0.1));
+	//Move up
 	if (GetKeyState('Q') < 0) camera.Translate(float3(0, -0.1, 0));
+	//Move down
 	if (GetKeyState('E') < 0) camera.Translate(float3(0, 0.1, 0));
+	//Left key to rotate left
 	if (GetKeyState(37) < 0) camera.Rotate(0, 0.05);
+	//Up key to rotate up
 	if (GetKeyState(38) < 0) camera.Rotate(0.05, 0);
+	//Right key to rotate right
 	if (GetKeyState(39) < 0) camera.Rotate(0, -0.05);
+	//Down key to rotate down
 	if (GetKeyState(40) < 0) camera.Rotate(-0.05, 0);
 	
 	// performance report - running average - ms, MRays/s
