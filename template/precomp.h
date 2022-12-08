@@ -8,18 +8,19 @@
 // do not include headers in header files (ever).
 
 // C++ headers
-#include <chrono>
-#include <conio.h>
-#include <fstream>
-#include <vector>
-#include <list>
-#include <string>
-#include <thread>
-#include <math.h>
-#include <map>
 #include <algorithm>
 #include <assert.h>
+#include <chrono>
+#include <fstream>
 #include <io.h>
+#include <list>
+#include <map>
+#include <math.h>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <thread>
+#include <vector>
 
 // header for AVX, and every technology before it.
 // if your CPU does not support this (unlikely), include the appropriate header instead.
@@ -1652,5 +1653,6 @@ public:
 #include "scene.h"
 #include "camera.h"
 #include "renderer.h"
+#include "TriangleMesh.h"
 
 // EOF
