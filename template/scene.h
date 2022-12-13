@@ -66,14 +66,17 @@ namespace Tmpl8 {
 		return (1 - a) * x + a * y;
 	}
 
-	inline float3 random_in_uint_sphere() {
+	inline float3 random_in_hemisphere(float3 N) {
 		while (true) {
 			float3 result;
 			float x = rand() * (2.0 / RAND_MAX) - 1.0;
 			float y = rand() * (2.0 / RAND_MAX) - 1.0;
 			float z = rand() * (2.0 / RAND_MAX) - 1.0;
 			result = float3(x, y, z);
-			if(length(result) <= 1.0) return result;
+			if (length(result) <= 1.0) {
+				if (dot(result, N) < 0) return -result;
+				return result;
+			}
 		}
 	}
 
@@ -396,15 +399,15 @@ namespace Tmpl8 {
 		Scene()
 		{
 			// we store all primitives in one continuous buffer
-			float3 red = float3(1, 0, 0);
+			float3 red = float3(0.8, 0, 0);
 			float3 green = float3(0, 1, 0);
-			float3 blue = float3(0, 0, 1);
-			float3 purple = float3(1, 0, 1);
-			float3 yellow = float3(1, 1, 0);
+			float3 blue = float3(0.1, 0.3, 1);
+			float3 purple = float3(0.9, 0.2, 0.9);
+			float3 yellow = float3(1, 0.8, 0);
 			float3 white = float3(1, 1, 1);
-			quad = Quad(0, 1, mat4::Identity(), white, Light);															// 0: light source
+			quad = Quad(0, 3, mat4::Identity(), white, Light);															// 0: light source
 			sphere = Sphere(1, float3(0), 0.5f, yellow, Mirror);				// 1: bouncing ball
-			sphere2 = Sphere(2, float3(0, 2.5f, -3.07f), 8, blue, Basic);	// 2: rounded corners
+			sphere2 = Sphere(2, float3(0, 2.5f, -3.07f), 8, blue, Diffuse);	// 2: rounded corners
 			cube = Cube(3, float3(0), float3(1.15f), mat4::Identity(), purple, Glass);									// 3: cube
 			plane[0] = Plane(4, float3(1, 0, 0), 3, red, Diffuse);									// 4: left wall
 			plane[1] = Plane(5, float3(-1, 0, 0), 2.99f, blue, Diffuse);								// 5: right wall
