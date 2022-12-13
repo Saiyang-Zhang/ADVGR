@@ -3,6 +3,25 @@
 namespace Tmpl8 {
 
     const double BRIGHTNESS = 2.0f * 3.1415926f;
+
+    class BoundingBox
+    {
+        BoundingBox() = default;
+        BoundingBox(Cube& s) {
+
+        }
+        BoundingBox(Quad& s) {
+
+        }
+        BoundingBox(Sphere& s) {
+
+        }
+        BoundingBox(Triangle& s) {
+
+        }
+
+        float3 minP, maxP;
+    };
    
     class TriangleMesh
     {

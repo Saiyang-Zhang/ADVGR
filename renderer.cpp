@@ -120,18 +120,18 @@ float3 Renderer::PathTrace(Ray& ray, float iter = 0) {
 	//float3 albedo = scene.GetAlbedo(ray.objIdx, I);
 
 	//Basic material is for testing, will still be referred to in future development
-	if (mat == Basic) return 1.25 * color;
+	if (mat == Basic) return cos1 * 1.25 * color;
 
 	//To make the expectation of the color even, we need to divide the result by P. And to avoid
 	//division, we multiply the color by reciprocal of P
 	if (mat == Diffuse) {
-		return 1.25 * color * PathTrace(randomRay, iter + 1);
+		return cos1 * 1.25 * color * PathTrace(randomRay, iter + 1);
 	}
 
 	if (mat == Mirror) {
 		float3 reflectRayDir = normalize(reflect(ray.D, N));
 		Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir);
-		return 1.25 * color * PathTrace(mirrorRay, iter+1);
+		return cos1 * 1.25 * color * PathTrace(mirrorRay, iter+1);
 	}
 	if (mat == Glass)
 	{
@@ -151,7 +151,7 @@ float3 Renderer::PathTrace(Ray& ray, float iter = 0) {
 			float Fr = 0.5 * ((pow((cos1 - refractive[GlassToAir] * cos2) / (cos1 + refractive[GlassToAir] * cos2), 2)) + (pow((cos2 - refractive[GlassToAir] * cos1) / (cos2 + refractive[GlassToAir] * cos1), 2)));
 			float Ft = 1 - Fr;
 
-			return 1.25 * (Absorb(PathTrace(refractRay, iter + 1) * Ft, ray.t, color * 0.1) + PathTrace(reflectRay, iter + 1) * Fr);
+			return cos1 * 1.25 * (Absorb(PathTrace(refractRay, iter + 1) * Ft, ray.t, color * 0.1) + PathTrace(reflectRay, iter + 1) * Fr);
 		}
 		if (ray.media == Glass) {
 			k = 1 - pow(refractive[GlassToAir], 2) * (1 - pow(cos1, 2));
@@ -165,7 +165,7 @@ float3 Renderer::PathTrace(Ray& ray, float iter = 0) {
 				float Fr = 0.5 * ((pow((refractive[GlassToAir] * cos1 - cos2) / (refractive[GlassToAir] * cos1 + cos2), 2)) + (pow((refractive[GlassToAir] * cos2 - cos1) / (refractive[GlassToAir] * cos2 + cos1), 2)));
 				float Ft = 1 - Fr;
 
-				return 1.25 * (PathTrace(refractRay, iter + 1) * Ft + PathTrace(reflectRay, iter + 1) * Fr);
+				return 1.25 * cos1 * (PathTrace(refractRay, iter + 1) * Ft + PathTrace(reflectRay, iter + 1) * Fr);
 			}
 		}
 	}
@@ -259,7 +259,7 @@ void Renderer::Tick(float deltaTime)
 			float3 color = PathTrace(camera.GetPrimaryRay(x, y));
 
 			accumulator[x + y * SCRWIDTH] *= (sample - 1) / sample;
-			accumulator[x + y * SCRWIDTH] += float4(color * (1.0 / sample), 0);
+			accumulator[x + y * SCRWIDTH] += float4(color * (BRIGHTNESS / sample), 0);
 		}
 
 		// translate accumulator contents to rgb32 pixels

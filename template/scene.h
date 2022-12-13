@@ -405,7 +405,7 @@ namespace Tmpl8 {
 			float3 purple = float3(0.9, 0.2, 0.9);
 			float3 yellow = float3(1, 0.8, 0);
 			float3 white = float3(1, 1, 1);
-			quad = Quad(0, 3, mat4::Identity(), white, Light);															// 0: light source
+			quad = Quad(0, 2, mat4::Identity(), white, Light);															// 0: light source
 			sphere = Sphere(1, float3(0), 0.5f, yellow, Mirror);				// 1: bouncing ball
 			sphere2 = Sphere(2, float3(0, 2.5f, -3.07f), 8, blue, Diffuse);	// 2: rounded corners
 			cube = Cube(3, float3(0), float3(1.15f), mat4::Identity(), purple, Glass);									// 3: cube
