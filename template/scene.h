@@ -58,6 +58,17 @@ namespace Tmpl8 {
 		{GlassToWater, 1.125}
 	};
 
+	class Material {
+	public:
+		Material() = default;
+		Material(float3 color, float3 albedo, MatType type) : 
+		color(color), albedo(albedo), type(type) {}
+
+		float3 color;
+		float3 albedo;
+		MatType type;
+	};
+
 	inline float3 fsqrt(float3 vector) {
 		return float3(sqrt(vector.x), sqrt(vector.y), sqrt(vector.z));
 	}
@@ -116,40 +127,78 @@ namespace Tmpl8 {
 	// inside it. Good candidate for a dielectric material.
 	// -----------------------------------------------------------
 
-	
-
-	class Shape {
+	class BoundingBox
+	{
 	public:
-		Shape() = default;
-		Shape(float3 color, MatType type) : color(color), material(type) {}
+		BoundingBox() = default;
+		BoundingBox(float3 minCorner, float3 maxCorner) :
+			minCorner(minCorner), maxCorner(maxCorner) {}
 
-		float3 color;
-		MatType material;
+		void operator*=(const mat4& M) {
+			minCorner = TransformPosition(minCorner, M);
+			maxCorner = TransformPosition(maxCorner, M);
+		}
+		BoundingBox operator*(mat4& M) {
+			return BoundingBox(TransformPosition(minCorner, M), TransformPosition(maxCorner, M));
+		}
+
+		float3 minCorner, maxCorner;
 	};
 
+	class BVH_Node
+	{
+	public:
+		BVH_Node* left;
+		BVH_Node* right;
+		bool isLeaf;
+		int root, objIdx;
+	};
+
+
+	class Shape
+	{
+	public:
+		virtual void Intersect(Ray& ray) const = 0;
+		virtual float3 GetNormal(const float3 I) const = 0;
+		virtual float3 GetAlbedo(const float3 I) const = 0;
+		//virtual BoundingBox GetAABB() const = 0;
+
+		Material material;
+		BoundingBox aabb;
+		int objIdx = -1;
+	};
+
+	// -----------------------------------------------------------
+	// Sphere Shape
+	// Basic sphere, with explicit support for rays that start
+	// inside it. Good candidate for a dielectric material.
+	// -----------------------------------------------------------
 	class Sphere : public Shape
 	{
 	public:
 		Sphere() = default;
-		Sphere(int idx, float3 p, float r, float3 color = float3(1), MatType type = Diffuse) :
-			Shape(color, type), pos(p), r2(r* r), invr(1 / r), objIdx(idx) {}
+		Sphere(int objIdx, float3 p, float r, Material material) : pos(p), r(r), invr(1 / r)
+		{
+			this->objIdx = objIdx;
+			this->material = material;
+		}
 		void Intersect(Ray& ray) const
 		{
 			float3 oc = ray.O - this->pos;
 			float b = dot(oc, ray.D);
-			float c = dot(oc, oc) - this->r2;
+			float c = dot(oc, oc) - this->r * this->r;
 			float t, d = b * b - c;
 			if (d <= 0) return;
 			d = sqrtf(d), t = -b - d;
 			if (t < ray.t && t > 0)
 			{
-				ray.t = t, ray.objIdx = objIdx;
+				ray.t = t, ray.objIdx = this->objIdx;
 				return;
 			}
 			t = d - b;
 			if (t < ray.t && t > 0)
 			{
-				ray.t = t, ray.objIdx = objIdx;
+				ray.t = t, ray.objIdx = this->objIdx;
 				return;
 			}
 		}
@@ -159,28 +208,30 @@ namespace Tmpl8 {
 		}
 		float3 GetAlbedo(const float3 I) const
 		{
-			return float3(0.93f);
+			return float3(1, 0.2f, 0.2f);
 		}
-		float3 pos = 0;
-		float r2 = 0, invr = 0;
-		int objIdx = -1;
+		float3 pos;
+		float r, invr;
 	};
 
 	// -----------------------------------------------------------
-	// Plane primitive
-	// Basic infinite plane, defined by a normal and a Diffuse
+	// Plane Shape
+	// Basic infinite plane, defined by a normal and a distance
 	// from the origin (in the direction of the normal).
 	// -----------------------------------------------------------
 	class Plane : public Shape
 	{
 	public:
 		Plane() = default;
-		Plane(int idx, float3 normal, float dist, float3 color = float3(1), MatType type = Diffuse) :
-			Shape(color, type), N(normal), d(dist), objIdx(idx) {}
+		Plane(int objIdx, float3 normal, float dist, Material material) : N(normal), d(dist) 
+		{
+			this->objIdx = objIdx;
+			this->material = material;
+		}
 		void Intersect(Ray& ray) const
 		{
 			float t = -(dot(ray.O, this->N) + this->d) / (dot(ray.D, this->N));
-			if (t < ray.t && t > 0) ray.t = t, ray.objIdx = objIdx;
+			if (t < ray.t && t > 0) ray.t = t, ray.objIdx = this->objIdx;
 		}
 		float3 GetNormal(const float3 I) const
 		{
@@ -212,11 +263,10 @@ namespace Tmpl8 {
 		}
 		float3 N;
 		float d;
-		int objIdx = -1;
 	};
 
 	// -----------------------------------------------------------
-	// Cube primitive
+	// Cube Shape
 	// Oriented cube. Unsure if this will also work for rays that
 	// start inside it; maybe not the best candidate for testing
 	// dielectrics.
@@ -225,10 +275,10 @@ namespace Tmpl8 {
 	{
 	public:
 		Cube() = default;
-		Cube(int idx, float3 pos, float3 size, mat4 transform = mat4::Identity(), float3 color = float3::float3(1), MatType type = Diffuse) :
-			Shape(color, type)
+		Cube(int objIdx, float3 pos, float3 size, Material material, mat4 transform = mat4::Identity())
 		{
-			objIdx = idx;
+			this->objIdx = objIdx;
+			this->material = material;
 			b[0] = pos - 0.5f * size, b[1] = pos + 0.5f * size;
 			M = transform, invM = transform.FastInvertedTransformNoScale();
 		}
@@ -252,11 +302,11 @@ namespace Tmpl8 {
 			tmin = max(tmin, tzmin), tmax = min(tmax, tzmax);
 			if (tmin > 0)
 			{
-				if (tmin < ray.t) ray.t = tmin, ray.objIdx = objIdx;
+				if (tmin < ray.t) ray.t = tmin, ray.objIdx = this->objIdx;
 			}
 			else if (tmax > 0)
 			{
-				if (tmax < ray.t) ray.t = tmax, ray.objIdx = objIdx;
+				if (tmax < ray.t) ray.t = tmax, ray.objIdx = this->objIdx;
 			}
 		}
 		float3 GetNormal(const float3 I) const
@@ -279,25 +329,24 @@ namespace Tmpl8 {
 		}
 		float3 GetAlbedo(const float3 I) const
 		{
-			return float3(1, 1, 1);
+			return float3(0.2f, 1, 0.2f);
 		}
 		float3 b[2];
 		mat4 M, invM;
-		int objIdx = -1;
 	};
 
 	// -----------------------------------------------------------
-	// Quad primitive
+	// Quad Shape
 	// Oriented quad, intended to be used as a light source.
 	// -----------------------------------------------------------
 	class Quad : public Shape
 	{
 	public:
 		Quad() = default;
-		Quad(int idx, float s, mat4 transform = mat4::Identity(), float3 color = float3(1), MatType type = Diffuse) :
-			Shape(color, type)
+		Quad(int objIdx, float s, Material material, mat4 transform = mat4::Identity())
 		{
-			objIdx = idx;
+			this->objIdx = objIdx;
+			this->material = material;
 			size = s * 0.5f;
 			T = transform, invT = transform.FastInvertedTransformNoScale();
 		}
@@ -310,7 +359,7 @@ namespace Tmpl8 {
 			{
 				float3 I = O + t * D;
 				if (I.x > -size && I.x < size && I.z > -size && I.z < size)
-					ray.t = t, ray.objIdx = objIdx;
+					ray.t = t, ray.objIdx = this->objIdx;
 			}
 		}
 		float3 GetNormal(const float3 I) const
@@ -324,18 +373,18 @@ namespace Tmpl8 {
 		}
 		float size;
 		mat4 T, invT;
-		int objIdx = -1;
 	};
 
-	class Triangle : public Shape 
+	class Triangle
 	{
 	public:
 
 		Triangle() = default;
-		Triangle(int idx, int v0, int v1, int v2, float3 color, MatType type) :
-			Shape(color, type), objIdx(idx), v0(v0), v1(v1), v2(v2)
+		Triangle(int objIdx, int v0, int v1, int v2, Material material = Material()) :
+			v0(v0), v1(v1), v2(v2)
 		{
-			
+			//this->objIdx = objIdx;
+			//this->material = material;
 		};
 
 		void Intersect(Ray& ray) const
@@ -380,11 +429,51 @@ namespace Tmpl8 {
 			return N;
 		}
 
-		shared_ptr<TriangleMesh> mesh;
+		float3 GetAlbedo() const {
+			return float3(0);
+		}
+
 		int v0, v1, v2;
 		float3 N;
-		int objIdx = -1;
 	};
+
+	void read_from_obj_file(const string& file_name, vector<float3>& vertices, vector<Triangle>& triangles) {
+		// Open the file
+		ifstream file(file_name);
+		if (!file.is_open()) {
+			cerr << "Error: Unable to open file " << file_name << endl;
+			return;
+		}
+
+		// Read the file line by line
+		string line;
+		while (getline(file, line)) {
+			stringstream ss(line);
+
+			// Split the line into tokens
+			string token;
+			ss >> token;
+
+			// Parse the tokens
+			if (token == "v") {
+				// Parse vertex coordinates
+				float3 vertex;
+				ss >> vertex.x >> vertex.y >> vertex.z;
+				vertices.push_back(vertex);
+			}
+			else if (token == "f") {
+				// Parse triangle vertices
+				int v0, v1, v2;
+				ss >> v0 >> v1 >> v2;
+
+				// OBJ indices are 1-based, so we need to subtract 1 to get 0-based indices
+				v0--;
+				v1--;
+				v2--;
+				//triangles.push_back(Triangle(-1, v0, v1, v2));
+			}
+		}
+	}
 
 	// -----------------------------------------------------------
 	// Scene class
@@ -399,22 +488,43 @@ namespace Tmpl8 {
 		Scene()
 		{
 			// we store all primitives in one continuous buffer
-			float3 red = float3(0.8, 0, 0);
-			float3 green = float3(0, 1, 0);
-			float3 blue = float3(0.1, 0.3, 1);
-			float3 purple = float3(0.9, 0.2, 0.9);
-			float3 yellow = float3(1, 0.8, 0);
-			float3 white = float3(1, 1, 1);
-			quad = Quad(0, 2, mat4::Identity(), white, Light);															// 0: light source
-			sphere = Sphere(1, float3(0), 0.5f, yellow, Mirror);				// 1: bouncing ball
-			sphere2 = Sphere(2, float3(0, 2.5f, -3.07f), 8, blue, Diffuse);	// 2: rounded corners
-			cube = Cube(3, float3(0), float3(1.15f), mat4::Identity(), purple, Glass);									// 3: cube
-			plane[0] = Plane(4, float3(1, 0, 0), 3, red, Diffuse);									// 4: left wall
-			plane[1] = Plane(5, float3(-1, 0, 0), 2.99f, blue, Diffuse);								// 5: right wall
-			plane[2] = Plane(6, float3(0, 1, 0), 1, white, Diffuse);									// 6: floor
-			plane[3] = Plane(7, float3(0, -1, 0), 2, white, Diffuse);									// 7: ceiling
-			plane[4] = Plane(8, float3(0, 0, 1), 3, green, Diffuse);									// 8: front wall
-			plane[5] = Plane(9, float3(0, 0, -1), 3.99f, white, Diffuse);								// 9: back wall
+			Material red = Material(float3(0.8, 0, 0), float3(0), Diffuse);
+			Material green = Material(float3(0, 1, 0), float3(0), Diffuse);
+			Material blue = Material(float3(0.1, 0.3, 1), float3(0), Diffuse);
+			Material purple = Material(float3(0.9, 0.2, 0.9), float3(0), Glass);
+			Material yellow = Material(float3(1, 0.8, 0), float3(0), Mirror);
+			Material white = Material(float3(1, 1, 1), float3(0), Diffuse);
+			Material light = Material(float3(1, 1, 1), float3(0), Light);
+			quad = Quad(0, 2, light, mat4::Identity());						// 0: light source
+			sphere = Sphere(1, float3(0), 0.5f, yellow);				// 1: bouncing ball
+			sphere2 = Sphere(2, float3(0, 2.5f, -3.07f), 8, blue);	// 2: rounded corners
+			cube = Cube(3, float3(0), float3(1.15f), purple, mat4::Identity());									// 3: cube
+			plane[0] = Plane(4, float3(1, 0, 0), 3, red);									// 4: left wall
+			plane[1] = Plane(5, float3(-1, 0, 0), 2.99f, blue);								// 5: right wall
+			plane[2] = Plane(6, float3(0, 1, 0), 1, white);									// 6: floor
+			plane[3] = Plane(7, float3(0, -1, 0), 2, white);									// 7: ceiling
+			plane[4] = Plane(8, float3(0, 0, 1), 3, green);									// 8: front wall
+			plane[5] = Plane(9, float3(0, 0, -1), 3.99f, white);								// 9: back wall
+			
+			shapes.push_back(&quad);
+			shapes.push_back(&sphere);
+			shapes.push_back(&sphere2);
+			shapes.push_back(&cube);
+			shapes.push_back(&plane[0]);
+			shapes.push_back(&plane[1]);
+			shapes.push_back(&plane[2]);
+			shapes.push_back(&plane[3]);
+			shapes.push_back(&plane[4]);
+			shapes.push_back(&plane[5]);
+
+			read_from_obj_file("assets/bunny.obj", vertices, triangles);
+
+			/*for (int i = 0; i < triangles.size(); i++) {
+				triangles[i].objIdx = 10 + i;
+				shapes.push_back(&triangles[i]);
+			}*/
+			printf("vertices: %d, triangles: %d", vertices.size(), triangles.size());
+			
 			SetTime(0);
 			// Note: once we have triangle support we should get rid of the class
 			// hierarchy: virtuals reduce performance somewhat.
@@ -463,20 +573,12 @@ namespace Tmpl8 {
 		float3 GetLightColor(int objIdx) const
 		{
 			if (objIdx == -1) return float3(0); // or perhaps we should just crash
-			if (objIdx == 0) return quad.color;
-			if (objIdx == 1) return sphere.color;
-			if (objIdx == 2) return sphere2.color;
-			if (objIdx == 3) return cube.color;
-			return plane[objIdx - 4].color;
+			return shapes[objIdx]->material.color;
 		}
 		MatType GetObjMat(int objIdx) const
 		{
 			if (objIdx == -1) return Basic; // or perhaps we should just crash
-			if (objIdx == 0) return quad.material;
-			if (objIdx == 1) return sphere.material;
-			if (objIdx == 2) return sphere2.material;
-			if (objIdx == 3) return cube.material;
-			return plane[objIdx - 4].material;
+			return shapes[objIdx]->material.type;
 		}
 		void FindNearest(Ray& ray) const
 		{
@@ -510,16 +612,7 @@ namespace Tmpl8 {
 			// this way we prevent calculating it multiple times.
 			if (objIdx == -1) return float3(0); // or perhaps we should just crash
 			float3 N;
-			if (objIdx == 0) N = quad.GetNormal(I);
-			else if (objIdx == 1) N = sphere.GetNormal(I);
-			else if (objIdx == 2) N = sphere2.GetNormal(I);
-			else if (objIdx == 3) N = cube.GetNormal(I);
-			else
-			{
-				// faster to handle the 6 planes without a call to GetNormal
-				N = float3(0);
-				N[(objIdx - 4) / 2] = 1 - 2 * (float)(objIdx & 1);
-			}
+			N = shapes[objIdx]->GetNormal(I);
 			if (dot(N, wo) > 0) N = -N; // hit backside / inside
 			return N;
 		}
@@ -554,6 +647,9 @@ namespace Tmpl8 {
 		Sphere sphere2;
 		Cube cube;
 		Plane plane[6];
+		vector<Triangle> triangles;
+		vector<float3> vertices;
+		vector<Shape*> shapes;
 	};
 
 }

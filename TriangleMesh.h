@@ -4,34 +4,18 @@ namespace Tmpl8 {
 
     const double BRIGHTNESS = 2.0f * 3.1415926f;
 
-    class BoundingBox
-    {
-        BoundingBox() = default;
-        BoundingBox(Cube& s) {
+ 
 
-        }
-        BoundingBox(Quad& s) {
 
-        }
-        BoundingBox(Sphere& s) {
-
-        }
-        BoundingBox(Triangle& s) {
-
-        }
-
-        float3 minP, maxP;
-    };
-   
     class TriangleMesh
     {
     public:
         TriangleMesh() = default;
-        TriangleMesh(const string& file_name) {
-            read_from_obj_file(file_name);
+        TriangleMesh(const string& file_name, vector<Triangle>& triangles) {
+            read_from_obj_file(file_name, triangles);
         }
 
-        void read_from_obj_file(const string& file_name) {
+        void read_from_obj_file(const string& file_name, vector<Triangle>& triangles) {
             // Open the file
             ifstream file(file_name);
             if (!file.is_open()) {
@@ -57,19 +41,18 @@ namespace Tmpl8 {
                 }
                 else if (token == "f") {
                     // Parse triangle vertices
-                    Triangle triangle;
-                    ss >> triangle.v0 >> triangle.v1 >> triangle.v2;
+                    Triangle* triangle;
+                    ss >> triangle->v0 >> triangle->v1 >> triangle->v2;
 
                     // OBJ indices are 1-based, so we need to subtract 1 to get 0-based indices
-                    triangle.v0--;
-                    triangle.v1--;
-                    triangle.v2--;
-                    triangles.push_back(triangle);
+                    triangle->v0--;
+                    triangle->v1--;
+                    triangle->v2--;
+                    triangles.push_back(*triangle);
                 }
             }
         }        
         vector<float3> vertices;
-        vector<Triangle> triangles;
     };
 
 }
