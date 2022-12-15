@@ -1653,6 +1653,5 @@ public:
 #include "scene.h"
 #include "camera.h"
 #include "renderer.h"
-#include "TriangleMesh.h"
 
 // EOF

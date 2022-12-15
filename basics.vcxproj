@@ -134,7 +134,6 @@
     <ClInclude Include="template\common.h" />
     <ClInclude Include="template\precomp.h" />
     <ClInclude Include="template\scene.h" />
-    <ClInclude Include="TriangleMesh.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="template\LICENSE" />

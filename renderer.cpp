@@ -30,7 +30,7 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	Ray shadowray = Ray(I + shadowRayDir * 0.001, shadowRayDir, distance, ray.media);
 	float3 albedo = scene.GetAlbedo(ray.objIdx, I);
 
-	MatType mat = scene.GetObjMat(ray.objIdx);
+	MatType mat = scene.GetObjMatType(ray.objIdx);
 	float3 color = scene.GetLightColor(ray.objIdx);
 	if (scene.IsOccluded(shadowray)) {
 		if (mat == Mirror) {
@@ -93,7 +93,7 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 
 float3 Renderer::PathTrace(Ray& ray, float iter = 0) {
 	scene.FindNearest(ray);
-	MatType mat = scene.GetObjMat(ray.objIdx);
+	MatType mat = scene.GetObjMatType(ray.objIdx);
 	float3 color = scene.GetLightColor(ray.objIdx);
 
 	if (mat == Light) return color;
