@@ -302,7 +302,7 @@ void Renderer::Tick(float deltaTime)
 	//	scene.triangles[0].material.color.z
 	//	);
 
-	printf("%d\n", scene.nodesUsed);
+	printf("nodesused: %d\n", scene.nodesUsed);
 
 	//printf("%5.2fms (%.1fps) - %.1fMrays/s\n", avg, fps, rps / 1000000);
 }
