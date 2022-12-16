@@ -45,7 +45,7 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	}
 
 	if (mat == Diffuse) {
-		return color / distance;
+		return color / (0.3 * distance);
 	}
 	if (mat == Mirror) {
 		float3 reflectRayDir = normalize(reflect(ray.D, N));
@@ -296,6 +296,13 @@ void Renderer::Tick(float deltaTime)
 	if (alpha > 0.05f) alpha *= 0.5f;
 	float fps = 1000 / avg, rps = (SCRWIDTH * SCRHEIGHT) * fps;
 	
-	
+	//printf("%f, %f, %f\n%",
+	//	scene.triangles[0].material.color.x,
+	//	scene.triangles[0].material.color.y,
+	//	scene.triangles[0].material.color.z
+	//	);
+
+	printf("%d\n", scene.nodesUsed);
+
 	//printf("%5.2fms (%.1fps) - %.1fMrays/s\n", avg, fps, rps / 1000000);
 }

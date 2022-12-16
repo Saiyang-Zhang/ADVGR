@@ -14,7 +14,7 @@ namespace Tmpl8 {
 		Camera()
 		{
 			// setup a basic view frustum
-			camPos = float3(0, 0, -2);
+			camPos = float3(0, 0, -29);
 			topLeft = float3(-aspect, 1, 2);
 			topRight = float3(aspect, 1, 2);
 			bottomLeft = float3(-aspect, -1, 2);

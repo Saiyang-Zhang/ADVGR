@@ -362,7 +362,7 @@ namespace Tmpl8 {
 			float3 p0 = vertices[v0];
 			float3 p1 =	vertices[v1];
 			float3 p2 = vertices[v2];
-			this->center = (p0 + p1 + p2) / 3;
+			this->center = (p0 + p1 + p2) * 0.3333333333;
 			N = normalize(cross(p1-p0, p2-p0));
 		}
 		void Intersect(Ray& ray) const
@@ -374,45 +374,28 @@ namespace Tmpl8 {
 			float3 O = TransformPosition(ray.O, invT);
 			float3 D = TransformVector(ray.D, invT);
 
-			float DP = dot(N, v0);
-
-			// parralel check
-			float parallel = dot(N, D);
-			if (parallel == 0) return;
-			float t = -(dot(N, O) + DP) / dot(N, D);
-			if( t < ray.t && t > 0 ) {	
-				float3 I = O + D * ray.t;
-
-				// edge 0
-				float3 edge0 = v1 - v0;
-				float3 vp0 = I - v0;
-				float3 C = cross(edge0, vp0);
-				if (dot(N,C) < 0) return;
-
-				// edge 1
-				float3 edge1 = v2 - v1;
-				float3 vp1 = I - v1;
-				C = cross(edge1, vp1);
-				if (dot(N, C) < 0)  return;
-
-				// edge 2
-				float3 edge2 = v0 - v2;
-				float3 vp2 = I - v2;
-				C = cross(edge2,vp2);
-				if (dot(N,C) < 0) return;
-
-				ray.t = t;
-				ray.objIdx = objIdx;
-			
-			}
+			const float3 edge1 = p1 - p0;
+			const float3 edge2 = p2 - p0;
+			const float3 h = cross(ray.D, edge2);
+			const float a = dot(edge1, h);
+			if (a > -0.0001f && a < 0.0001f) return; // ray parallel to triangle
+			const float f = 1 / a;
+			const float3 s = O - p0;
+			const float u = f * dot(s, h);
+			if (u < 0 || u > 1) return;
+			const float3 q = cross(s, edge1);
+			const float v = f * dot(D, q);
+			if (v < 0 || u + v > 1) return;
+			const float t = f * dot(edge2, q);
+			if (t > 0.0001f) ray.t = min(ray.t, t);
 		}
 		float3 GetNormal(const float3 I) const
 		{
-			return N;
+			return TransformVector(N, T);
 		}
 		float3 GetCenter() const
 		{
-			return center;
+			return TransformPosition(center, invT);
 		}
 		vector<float3> GetAABB() const
 		{
@@ -429,7 +412,7 @@ namespace Tmpl8 {
 		float3 N;
 	};
 
-	void read_from_obj_file(
+	inline void read_from_obj_file(
 		const string& file_name,
 		vector<float3>& vertices,
 		vector<Triangle>& triangles) {
@@ -440,7 +423,7 @@ namespace Tmpl8 {
 			return;
 		}
 
-		Material mat_tri = Material(float3(1, 1, 1), float3(0), Diffuse);
+		Material mat_tri = Material(float3(1), float3(0), Diffuse);
 
 		// Read the file line by line
 		string line;
@@ -467,27 +450,12 @@ namespace Tmpl8 {
 				v0--;
 				v1--;
 				v2--;
-				triangles.push_back(Triangle(-1, v0, v1, v2, vertices, mat_tri));
+				triangles.push_back(Triangle(-1, v0, v1, v2, vertices, mat_tri, mat4::Identity()));
 			}
 		}
 	}
 
-	struct BVHNode
-	{
-	public:
-		float3 aabbMin, aabbMax;
-		BVHNode* left;
-		BVHNode* right;
-		bool isLeaf;
-		int root, objIdx;
-	};
-
-	BVHNode* buildBVH() {
-		BVHNode* node = new BVHNode();
-		return node;
-	}
-	
-	bool IntersectAABB(const Ray & ray, const float3 bmin, const float3 bmax)
+	inline bool IntersectAABB(const Ray & ray, const float3 bmin, const float3 bmax)
 	{
 		float tx1 = (bmin.x - ray.O.x) / ray.D.x, tx2 = (bmax.x - ray.O.x) / ray.D.x;
 		float tmin = min(tx1, tx2), tmax = max(tx1, tx2);
@@ -497,6 +465,12 @@ namespace Tmpl8 {
 		tmin = max(tmin, min(tz1, tz2)), tmax = min(tmax, max(tz1, tz2));
 		return tmax >= tmin && tmin < ray.t&& tmax > 0;
 	}
+
+	struct BVHNode
+	{
+		float3 aabbMin, aabbMax;
+		int leftNode, firstTriIdx, triCount = 0;
+	};
 
 	// -----------------------------------------------------------
 	// Scene class
@@ -521,7 +495,7 @@ namespace Tmpl8 {
 
 			quad = Quad(0, 2, light, mat4::Identity());						// 0: light source
 			sphere = Sphere(1, float3(0), 0.5f, yellow);				// 1: bouncing ball
-			sphere2 = Sphere(2, float3(0, 2.5f, -3.07f), 8, white);	// 2: rounded corners
+			sphere2 = Sphere(2, float3(0, 2.5f, -3.07f), 30, white);	// 2: rounded corners
 			cube = Cube(3, float3(0), float3(1.15f), purple, mat4::Identity());									// 3: cube
 			
 			//plane[0] = Plane(4, float3(1, 0, 0), 3, red);									// 4: left wall
@@ -542,17 +516,115 @@ namespace Tmpl8 {
 			//shapes.push_back(&plane[4]);
 			//shapes.push_back(&plane[5]);
 
-			read_from_obj_file("assets/bunny.obj", vertices, triangles);
+			//read_from_obj_file("assets/bunny.obj", vertices, triangles);
 
-			for (int i = 0; i < triangles.size(); i++) {
-				triangles[i].objIdx = 4 + i;
-				shapes.push_back(&triangles[i]);
-			}
+
+
+			//for (int i = 0; i < 3; i++) {
+			//	float3 result;
+			//	float x = rand() * (2.0 / RAND_MAX) - 1.0;
+			//	float y = rand() * (2.0 / RAND_MAX) - 1.0;
+			//	float z = rand() * (2.0 / RAND_MAX) - 1.0;
+			//	result = float3(x, y, z) + float3(0, 2, 3);
+			//	vertices.push_back(result);
+			//}
+			//triangles.push_back(Triangle(4, 0, 1, 2, vertices, white, mat4::Identity()));
+
+			//for (int i = 0; i < triangles.size(); i++) {
+			//	triangles[i].objIdx = 4 + i;
+			//	shapes.push_back(&triangles[i]);
+			//}
+
+			for (int i = 0; i < shapes.size(); i++) shapeIdx.push_back(i);
+
+			BVHNode node = BVHNode();
+			nodes.assign(2 * shapes.size() - 1, node);
 			
 			SetTime(0);
-			// Note: once we have triangle support we should get rid of the class
-			// hierarchy: virtuals reduce performance somewhat.
+
+			BuildBVH();
 		}
+		
+		void BuildBVH()
+		{
+			// assign all triangles to root node
+			BVHNode& root = nodes[0];
+			root.leftNode = 0;
+			root.firstTriIdx = 0, root.triCount = shapes.size();
+			UpdateNodeBounds(0);
+			// subdivide recursively
+			Subdivide(0);
+		}
+
+		void UpdateNodeBounds(uint nodeIdx)
+		{
+			BVHNode& node = nodes[nodeIdx];
+			node.aabbMin = float3(1e30f);
+			node.aabbMax = float3(-1e30f);
+			for (uint first = node.firstTriIdx, i = 0; i < node.triCount; i++)
+			{
+				vector<float3> leafAABB = shapes[first + i]->GetAABB();
+				node.aabbMin = fminf(node.aabbMin, leafAABB[0]);
+				node.aabbMax = fmaxf(node.aabbMax, leafAABB[1]);
+			}
+		}
+
+		void Subdivide(uint nodeIdx)
+		{
+			// terminate recursion
+			BVHNode& node = nodes[nodeIdx];
+			if (node.triCount <= 2) return;
+			// determine split axis and position
+			float3 extent = node.aabbMax - node.aabbMin;
+			int axis = 0;
+			if (extent.y > extent.x) axis = 1;
+			if (extent.z > extent[axis]) axis = 2;
+			float splitPos = node.aabbMin[axis] + extent[axis] * 0.5f;
+			// in-place partition
+			int i = node.firstTriIdx;
+			int j = i + node.triCount - 1;
+			while (i <= j)
+			{
+				if (shapes[shapeIdx[i]]->center[axis] < splitPos)
+					i++;
+				else
+					swap(shapeIdx[i], shapeIdx[j--]);
+			}
+			// abort split if one of the sides is empty
+			int leftCount = i - node.firstTriIdx;
+			if (leftCount == 0 || leftCount == node.triCount) return;
+			// create child nodes
+			int leftChildIdx = nodesUsed++;
+			int rightChildIdx = nodesUsed++;
+			node.leftNode = leftChildIdx;
+			nodes[leftChildIdx].firstTriIdx = node.firstTriIdx;
+			nodes[leftChildIdx].triCount = leftCount;
+			nodes[rightChildIdx].firstTriIdx = i;
+			nodes[rightChildIdx].triCount = node.triCount - leftCount;
+			node.triCount = 0;
+			UpdateNodeBounds(leftChildIdx);
+			UpdateNodeBounds(rightChildIdx);
+			// recurse
+			Subdivide(leftChildIdx);
+			Subdivide(rightChildIdx);
+		}
+
+		void IntersectBVH(Ray& ray, const uint nodeIdx) const
+		{
+			BVHNode node = nodes[nodeIdx];
+			if (!IntersectAABB(ray, node.aabbMin, node.aabbMax)) return;
+			if (node.triCount > 0)
+			{
+				for (uint i = 0; i < node.triCount; i++)
+					shapes[shapeIdx[node.firstTriIdx + i]]->Intersect(ray);
+			}
+			else
+			{
+				IntersectBVH(ray, node.leftNode);
+				IntersectBVH(ray, node.leftNode + 1);
+			}
+		}
+
 		void SetTime(float t)
 		{
 			// default time for the scene is simply 0. Updating/ the time per frame 
@@ -560,31 +632,28 @@ namespace Tmpl8 {
 			animTime = t;
 			// light source animation: swing
 			
-			mat4 M1base = mat4::Translate(float3(0, 2.6f, 2));
-			mat4 M1 = M1base * mat4::RotateZ(sinf(animTime * 0.6f) * 0.1f) * mat4::Translate(float3(0, -0.9, 0));
-			quad.T = M1, quad.invT = M1.FastInvertedTransformNoScale();
-
-			// cube animation: spin
-			mat4 M2base = mat4::RotateX(PI / 4) * mat4::RotateZ(PI / 4);
-			mat4 M2 = mat4::Translate(float3(1.4f, 0, 2)) * mat4::RotateY(animTime * 0.5f) * M2base;
-			cube.T = M2, cube.invT = M2.FastInvertedTransformNoScale();
-
-			// sphere animation: bounce
-			float tm = 1 - sqrf(fmodf(animTime, 2.0f) - 1);
-			sphere.center = float3(-1.4f, -0.5f + tm, 2);
-
-			//mat4 M1base = mat4::Translate(float3(0, 2.6f, 2));
-			//mat4 M1 = M1base * mat4::Translate(float3(0, -0.9, 0));
-			//
+			//mat4 M1base = mat4::Translate(float3(0, 14.5f, 2));
+			//mat4 M1 = M1base * mat4::RotateZ(sinf(animTime * 0.6f) * 0.1f) * mat4::Translate(float3(0, -0.9, 0));
 			//quad.T = M1, quad.invT = M1.FastInvertedTransformNoScale();
 
-			//mat4 M2 = mat4::Translate(float3(1.4f, 0, 2));
+			//// cube animation: spin
+			//mat4 M2base = mat4::RotateX(PI / 4) * mat4::RotateZ(PI / 4);
+			//mat4 M2 = mat4::Translate(float3(10.0f, 0, 2)) * mat4::RotateY(animTime * 0.5f) * M2base;
 			//cube.T = M2, cube.invT = M2.FastInvertedTransformNoScale();
 
-			////mat4 M3 = mat4::RotateY(animTime * 0.5f);
-			////triangle.M = M3, triangle.invM = M3.FastInvertedTransformNoScale();
-			//
-			//sphere.center = float3(-1.4f, 0.2, 2);
+			//// sphere animation: bounce
+			//float tm = 1 - sqrf(fmodf(animTime, 2.0f) - 1);
+			//sphere.center = float3(-10.0f, -0.5f + tm, 2);
+
+			mat4 M1base = mat4::Translate(float3(0, 29.5f, 2));
+			mat4 M1 = M1base * mat4::Translate(float3(0, -0.9, 0));
+			
+			quad.T = M1, quad.invT = M1.FastInvertedTransformNoScale();
+
+			mat4 M2 = mat4::Translate(float3(27.0f, 0, 2));
+			cube.T = M2, cube.invT = M2.FastInvertedTransformNoScale();
+	
+			sphere.center = float3(-27.0f, 0.2, 2);
 		
 		}
 		float3 GetLightPos() const
@@ -604,19 +673,21 @@ namespace Tmpl8 {
 		}
 		void FindNearest(Ray& ray) const
 		{
-			quad.Intersect(ray);
-			sphere.Intersect(ray);
-			sphere2.Intersect(ray);
-			cube.Intersect(ray);
+			IntersectBVH(ray, 0);
+			//quad.Intersect(ray);
+			//sphere.Intersect(ray);
+			//sphere2.Intersect(ray);
+			//cube.Intersect(ray);
 		}
 		bool IsOccluded(Ray& ray) const
 		{
 			float rayLength = ray.t;
 			// skip planes: it is not possible for the walls to occlude anything
-			quad.Intersect(ray);
-			sphere.Intersect(ray);
-			sphere2.Intersect(ray);
-			cube.Intersect(ray);
+			IntersectBVH(ray, 0);
+			//quad.Intersect(ray);
+			//sphere.Intersect(ray);
+			//sphere2.Intersect(ray);
+			//cube.Intersect(ray);
 			return ray.t < rayLength;
 			// technically this is wasteful: 
 			// - we potentially search beyond rayLength
@@ -662,7 +733,11 @@ namespace Tmpl8 {
 		//Plane plane[6];
 		vector<Triangle> triangles;
 		vector<float3> vertices;
+
 		vector<Shape*> shapes;
+		vector<uint> shapeIdx;
+		int nodesUsed = 1;
+		BVHNode root;
 		vector<BVHNode> nodes;
 	};
 }
