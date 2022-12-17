@@ -45,7 +45,7 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	}
 
 	if (mat == Diffuse) {
-		return color / (0.3 * distance);
+		return color / distance;
 	}
 	if (mat == Mirror) {
 		float3 reflectRayDir = normalize(reflect(ray.D, N));
@@ -88,7 +88,7 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 			}
 		}
 	}
-	return color;
+	return float3(1);
 }
 
 float3 Renderer::PathTrace(Ray& ray, float iter = 0) {
@@ -302,7 +302,11 @@ void Renderer::Tick(float deltaTime)
 	//	scene.triangles[0].material.color.z
 	//	);
 
-	printf("nodesused: %d\n", scene.nodesUsed);
+	//for (int i = 0; i < scene.shapeIdx.size(); i++)
+	//{
+	//	printf("%d ", scene.shapeIdx[i]);
+	//}
+	//printf("\n");
 
 	//printf("%5.2fms (%.1fps) - %.1fMrays/s\n", avg, fps, rps / 1000000);
 }

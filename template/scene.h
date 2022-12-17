@@ -353,41 +353,37 @@ namespace Tmpl8 {
 	public:
 	public:
 		Triangle() = default;
-		Triangle(int objIdx, int v0, int v1, int v2, vector<float3>& vertices, Material material, mat4 transform = mat4::Identity()) :
-			v0(v0), v1(v1), v2(v2), vertices(vertices)
+		Triangle(int objIdx, float3 v0, float3 v1, float3 v2, Material material, mat4 transform = mat4::Identity()) :
+			v0(v0), v1(v1), v2(v2)
 		{
+			N = normalize(cross(v1-v0, v2-v0));
 			this->objIdx = objIdx;
 			this->material = material;
 			this->T = transform, this->invT = transform.FastInvertedTransformNoScale();
-			float3 p0 = vertices[v0];
-			float3 p1 =	vertices[v1];
-			float3 p2 = vertices[v2];
-			this->center = (p0 + p1 + p2) * 0.3333333333;
-			N = normalize(cross(p1-p0, p2-p0));
+			this->center = (v0 + v1 + v2) * 0.3333333333;
 		}
 		void Intersect(Ray& ray) const
 		{
-			float3 p0 = vertices[v0];
-			float3 p1 = vertices[v1];
-			float3 p2 = vertices[v2];
-			
 			float3 O = TransformPosition(ray.O, invT);
 			float3 D = TransformVector(ray.D, invT);
 
-			const float3 edge1 = p1 - p0;
-			const float3 edge2 = p2 - p0;
+			const float3 edge1 = v1 - v0;
+			const float3 edge2 = v2 - v0;
 			const float3 h = cross(ray.D, edge2);
 			const float a = dot(edge1, h);
 			if (a > -0.0001f && a < 0.0001f) return; // ray parallel to triangle
 			const float f = 1 / a;
-			const float3 s = O - p0;
+			const float3 s = O - v0;
 			const float u = f * dot(s, h);
 			if (u < 0 || u > 1) return;
 			const float3 q = cross(s, edge1);
 			const float v = f * dot(D, q);
 			if (v < 0 || u + v > 1) return;
 			const float t = f * dot(edge2, q);
-			if (t > 0.0001f) ray.t = min(ray.t, t);
+			if (t > 0.0001f) {
+				ray.t = min(ray.t, t);
+				ray.objIdx = this->objIdx;
+			}
 		}
 		float3 GetNormal(const float3 I) const
 		{
@@ -400,60 +396,62 @@ namespace Tmpl8 {
 		vector<float3> GetAABB() const
 		{
 			vector<float3> aabb;
-			float3 p0 = TransformPosition(vertices[v0], invT);
-			float3 p1 = TransformPosition(vertices[v1], invT);
-			float3 p2 = TransformPosition(vertices[v2], invT);
-			aabb.push_back(fminf(fminf(p0, p1), p2));
-			aabb.push_back(fmaxf(fmaxf(p0, p1), p2));
+			aabb.push_back(fminf(fminf(v0, v1), v2));
+			aabb.push_back(fmaxf(fmaxf(v0, v1), v2));
 			return aabb;
 		}
-		vector<float3>& vertices;
-		int v0, v1, v2;
-		float3 N;
+		float3 v0, v1, v2, N;
 	};
 
-	inline void read_from_obj_file(
-		const string& file_name,
-		vector<float3>& vertices,
-		vector<Triangle>& triangles) {
-		// Open the file
-		ifstream file(file_name);
-		if (!file.is_open()) {
-			cerr << "Error: Unable to open file " << file_name << endl;
-			return;
-		}
-
-		Material mat_tri = Material(float3(1), float3(0), Diffuse);
-
-		// Read the file line by line
-		string line;
-		while (getline(file, line)) {
-			stringstream ss(line);
-
-			// Split the line into tokens
-			string token;
-			ss >> token;
-
-			// Parse the tokens
-			if (token == "v") {
-				// Parse vertex coordinates
-				float3 vertex;
-				ss >> vertex.x >> vertex.y >> vertex.z;
-				vertices.push_back(vertex);
+	class TriangleMesh
+	{
+	public:
+		TriangleMesh() = default;
+		TriangleMesh(int mesh, const string& file_name) {
+			// Open the file
+			ifstream file(file_name);
+			if (!file.is_open()) {
+				cerr << "Error: Unable to open file " << file_name << endl;
+				return;
 			}
-			else if (token == "f") {
-				// Parse triangle vertices
-				int v0, v1, v2;
-				ss >> v0 >> v1 >> v2;
 
-				// OBJ indices are 1-based, so we need to subtract 1 to get 0-based indices
-				v0--;
-				v1--;
-				v2--;
-				triangles.push_back(Triangle(-1, v0, v1, v2, vertices, mat_tri, mat4::Identity()));
+			int faceIdx = 0;
+
+			material = Material(float3(1), float3(0), Diffuse);
+
+			// Read the file line by line
+			string line;
+			while (getline(file, line)) {
+				stringstream ss(line);
+
+				// Split the line into tokens
+				string token;
+				ss >> token;
+
+				// Parse the tokens
+				if (token == "v") {
+					// Parse vertex coordinates
+					float3 vertex;
+					ss >> vertex.x >> vertex.y >> vertex.z;
+					vertices.push_back(vertex);
+				}
+				else if (token == "f") {
+					int v0, v1, v2;
+					ss >> v0 >> v1 >> v2;
+					v0--;
+					v1--;
+					v2--;
+					triangles.push_back(Triangle(-1, vertices[v0]*10, vertices[v1]*10, vertices[v2]*10, material, mat4::Identity()));
+					faceIdx++;
+				}
 			}
 		}
-	}
+		
+		vector<float3> vertices;
+		vector<Triangle> triangles;
+		Material material;
+	};
+
 
 	inline bool IntersectAABB(const Ray & ray, const float3 bmin, const float3 bmax)
 	{
@@ -469,7 +467,7 @@ namespace Tmpl8 {
 	struct BVHNode
 	{
 		float3 aabbMin, aabbMax;
-		int leftNode, firstTriIdx, triCount = 0;
+		int leftNode, firstIdx, childN;
 	};
 
 	// -----------------------------------------------------------
@@ -493,9 +491,9 @@ namespace Tmpl8 {
 			Material white = Material(float3(1, 1, 1), float3(0), Diffuse);
 			Material light = Material(float3(1, 1, 1), float3(0), Light);
 
-			quad = Quad(0, 2, light, mat4::Identity());						// 0: light source
+			quad = Quad(0, 1, light, mat4::Identity());						// 0: light source
 			sphere = Sphere(1, float3(0), 0.5f, yellow);				// 1: bouncing ball
-			sphere2 = Sphere(2, float3(0, 2.5f, -3.07f), 30, white);	// 2: rounded corners
+			sphere2 = Sphere(2, float3(0, 2.5f, -3.07f), 8, white);	// 2: rounded corners
 			cube = Cube(3, float3(0), float3(1.15f), purple, mat4::Identity());									// 3: cube
 			
 			//plane[0] = Plane(4, float3(1, 0, 0), 3, red);									// 4: left wall
@@ -516,26 +514,35 @@ namespace Tmpl8 {
 			//shapes.push_back(&plane[4]);
 			//shapes.push_back(&plane[5]);
 
-			//read_from_obj_file("assets/bunny.obj", vertices, triangles);
+			mesh = TriangleMesh(0, "assets/bunny.obj");
 
+			printf("vertices: %d, triangles: %d\n", 
+				mesh.vertices.size(),
+				mesh.triangles.size()
+			);
 
-
-			//for (int i = 0; i < 3; i++) {
-			//	float3 result;
-			//	float x = rand() * (2.0 / RAND_MAX) - 1.0;
-			//	float y = rand() * (2.0 / RAND_MAX) - 1.0;
-			//	float z = rand() * (2.0 / RAND_MAX) - 1.0;
-			//	result = float3(x, y, z) + float3(0, 2, 3);
-			//	vertices.push_back(result);
-			//}
-			//triangles.push_back(Triangle(4, 0, 1, 2, vertices, white, mat4::Identity()));
-
-			//for (int i = 0; i < triangles.size(); i++) {
-			//	triangles[i].objIdx = 4 + i;
-			//	shapes.push_back(&triangles[i]);
-			//}
+			for (int i = 0; i < mesh.triangles.size(); i++) {
+				mesh.triangles[i].objIdx = 4 + i;
+				//printf("normal: %f, %f, %f\n", 
+				//	mesh.triangles[i].GetNormal(float3(0)).x,
+				//	mesh.triangles[i].GetNormal(float3(0)).y,
+				//	mesh.triangles[i].GetNormal(float3(0)).z
+				//);
+				shapes.push_back(&mesh.triangles[i]);
+				//printf("min: %f, %f, %f, max: %f, %f, %f\n", 
+				//	mesh.triangles[i].GetAABB()[0].x,
+				//	mesh.triangles[i].GetAABB()[0].y,
+				//	mesh.triangles[i].GetAABB()[0].z,
+				//	mesh.triangles[i].GetAABB()[1].x,
+				//	mesh.triangles[i].GetAABB()[1].y,
+				//	mesh.triangles[i].GetAABB()[1].z
+				//
+				//);
+			}
 
 			for (int i = 0; i < shapes.size(); i++) shapeIdx.push_back(i);
+
+			printf("%d\n", shapeIdx.size());
 
 			BVHNode node = BVHNode();
 			nodes.assign(2 * shapes.size() - 1, node);
@@ -550,7 +557,7 @@ namespace Tmpl8 {
 			// assign all triangles to root node
 			BVHNode& root = nodes[0];
 			root.leftNode = 0;
-			root.firstTriIdx = 0, root.triCount = shapes.size();
+			root.firstIdx = 0, root.childN = shapes.size();
 			UpdateNodeBounds(0);
 			// subdivide recursively
 			Subdivide(0);
@@ -561,19 +568,24 @@ namespace Tmpl8 {
 			BVHNode& node = nodes[nodeIdx];
 			node.aabbMin = float3(1e30f);
 			node.aabbMax = float3(-1e30f);
-			for (uint first = node.firstTriIdx, i = 0; i < node.triCount; i++)
+			for (uint first = node.firstIdx, i = 0; i < node.childN; i++)
 			{
 				vector<float3> leafAABB = shapes[first + i]->GetAABB();
 				node.aabbMin = fminf(node.aabbMin, leafAABB[0]);
 				node.aabbMax = fmaxf(node.aabbMax, leafAABB[1]);
 			}
+			printf("node: %d, bound min: %f, %f, %f, bound max: %f, %f, %f\n",
+				nodeIdx,
+				node.aabbMin.x, node.aabbMin.y, node.aabbMin.z,
+				node.aabbMax.x, node.aabbMax.y, node.aabbMax.z
+			);
 		}
 
 		void Subdivide(uint nodeIdx)
 		{
 			// terminate recursion
 			BVHNode& node = nodes[nodeIdx];
-			if (node.triCount <= 2) return;
+			if (node.childN <= 2) return;
 			// determine split axis and position
 			float3 extent = node.aabbMax - node.aabbMin;
 			int axis = 0;
@@ -581,8 +593,8 @@ namespace Tmpl8 {
 			if (extent.z > extent[axis]) axis = 2;
 			float splitPos = node.aabbMin[axis] + extent[axis] * 0.5f;
 			// in-place partition
-			int i = node.firstTriIdx;
-			int j = i + node.triCount - 1;
+			int i = node.firstIdx;
+			int j = i + node.childN - 1;
 			while (i <= j)
 			{
 				if (shapes[shapeIdx[i]]->center[axis] < splitPos)
@@ -591,17 +603,17 @@ namespace Tmpl8 {
 					swap(shapeIdx[i], shapeIdx[j--]);
 			}
 			// abort split if one of the sides is empty
-			int leftCount = i - node.firstTriIdx;
-			if (leftCount == 0 || leftCount == node.triCount) return;
+			int leftCount = i - node.firstIdx;
+			if (leftCount == 0 || leftCount == node.childN) return;
 			// create child nodes
 			int leftChildIdx = nodesUsed++;
 			int rightChildIdx = nodesUsed++;
 			node.leftNode = leftChildIdx;
-			nodes[leftChildIdx].firstTriIdx = node.firstTriIdx;
-			nodes[leftChildIdx].triCount = leftCount;
-			nodes[rightChildIdx].firstTriIdx = i;
-			nodes[rightChildIdx].triCount = node.triCount - leftCount;
-			node.triCount = 0;
+			nodes[leftChildIdx].firstIdx = node.firstIdx;
+			nodes[leftChildIdx].childN = leftCount;
+			nodes[rightChildIdx].firstIdx = i;
+			nodes[rightChildIdx].childN = node.childN - leftCount;
+			node.childN = 0;
 			UpdateNodeBounds(leftChildIdx);
 			UpdateNodeBounds(rightChildIdx);
 			// recurse
@@ -613,10 +625,10 @@ namespace Tmpl8 {
 		{
 			BVHNode node = nodes[nodeIdx];
 			if (!IntersectAABB(ray, node.aabbMin, node.aabbMax)) return;
-			if (node.triCount > 0)
+			if (node.childN > 0)
 			{
-				for (uint i = 0; i < node.triCount; i++)
-					shapes[shapeIdx[node.firstTriIdx + i]]->Intersect(ray);
+				for (uint i = 0; i < node.childN; i++)
+					shapes[shapeIdx[node.firstIdx + i]]->Intersect(ray);
 			}
 			else
 			{
@@ -645,15 +657,15 @@ namespace Tmpl8 {
 			//float tm = 1 - sqrf(fmodf(animTime, 2.0f) - 1);
 			//sphere.center = float3(-10.0f, -0.5f + tm, 2);
 
-			mat4 M1base = mat4::Translate(float3(0, 29.5f, 2));
+			mat4 M1base = mat4::Translate(float3(0, 5.0f, 0));
 			mat4 M1 = M1base * mat4::Translate(float3(0, -0.9, 0));
 			
 			quad.T = M1, quad.invT = M1.FastInvertedTransformNoScale();
 
-			mat4 M2 = mat4::Translate(float3(27.0f, 0, 2));
+			mat4 M2 = mat4::Translate(float3(2.4f, 0, 2));
 			cube.T = M2, cube.invT = M2.FastInvertedTransformNoScale();
 	
-			sphere.center = float3(-27.0f, 0.2, 2);
+			sphere.center = float3(-2.4f, 0.2, 2);
 		
 		}
 		float3 GetLightPos() const
@@ -731,11 +743,10 @@ namespace Tmpl8 {
 		Sphere sphere2;
 		Cube cube;
 		//Plane plane[6];
-		vector<Triangle> triangles;
-		vector<float3> vertices;
+		TriangleMesh mesh;
 
 		vector<Shape*> shapes;
-		vector<uint> shapeIdx;
+		vector<int> shapeIdx;
 		int nodesUsed = 1;
 		BVHNode root;
 		vector<BVHNode> nodes;
