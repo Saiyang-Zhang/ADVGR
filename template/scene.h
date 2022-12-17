@@ -26,7 +26,8 @@
 
 namespace Tmpl8 {
 
-	const double BRIGHTNESS = 2.0f * 3.1415926f;
+	const float BRIGHTNESS = 2.0f * 3.1415926f;
+	const float INF = 1e34f;
 
 	enum MatType {
 		Air,
@@ -453,6 +454,22 @@ namespace Tmpl8 {
 	};
 
 
+	inline bool cmpx(const Shape* s1, const Shape* s2) {
+		return s1->GetCenter().x < s2->GetCenter().x;
+	}
+	inline bool cmpy(const Shape* s1, const Shape* s2) {
+		return s1->GetCenter().y < s2->GetCenter().y;
+	}
+	inline bool cmpz(const Shape* s1, const Shape* s2) {
+		return s1->GetCenter().z < s2->GetCenter().z;
+	}
+
+	struct BVHNode {
+		int left, right;
+		int n, index;                          
+		float3 aabbMin, aabbMax;
+	};
+
 	inline bool IntersectAABB(const Ray & ray, const float3 bmin, const float3 bmax)
 	{
 		float tx1 = (bmin.x - ray.O.x) / ray.D.x, tx2 = (bmax.x - ray.O.x) / ray.D.x;
@@ -464,11 +481,99 @@ namespace Tmpl8 {
 		return tmax >= tmin && tmin < ray.t&& tmax > 0;
 	}
 
-	struct BVHNode
-	{
-		float3 aabbMin, aabbMax;
-		int leftNode, firstIdx, childN;
-	};
+	inline int BuildBVH_SAH(vector<Shape*>& shapes, vector<BVHNode>& nodes, int l, int r, int n) {
+		if (l > r) return 0;
+
+		int idx = nodes.size();
+		nodes.push_back(BVHNode());
+
+		nodes[idx].aabbMin = float3(INF);
+		nodes[idx].aabbMax = float3(-INF);
+
+		for (int i = l; i <= r; i++) {
+			vector<float3> aabb = shapes[i]->GetAABB();
+			nodes[idx].aabbMin = fminf(nodes[idx].aabbMin, aabb[0]);
+			nodes[idx].aabbMax = fmaxf(nodes[idx].aabbMax, aabb[1]);
+		}
+
+		if ((r - l + 1) <= n) {
+			nodes[idx].n = r - l + 1;
+			nodes[idx].index = l;
+			return idx;
+		}
+
+		float Cost = INF;
+		int Axis = 0;
+		int Split = (l + r) / 2;
+		for (int axis = 0; axis < 3; axis++) {
+			if (axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
+			if (axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
+			if (axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
+
+			vector<float3> leftMax(r - l + 1, float3(-INF));
+			vector<float3> leftMin(r - l + 1, float3(INF));
+			for (int i = l; i <= r; i++) {
+				vector<float3> aabb = shapes[i]->GetAABB();
+				int bias = (i == l) ? 0 : 1;
+
+				leftMin[i - l] = fminf(leftMin[i - l], aabb[0]);
+				leftMax[i - l] = fmaxf(leftMax[i - l], aabb[1]);
+			}
+
+			vector<float3> rightMax(r - l + 1, float3(-INF));
+			vector<float3> rightMin(r - l + 1, float3(INF));
+			for (int i = r; i >= l; i--) {
+				vector<float3> aabb = shapes[i]->GetAABB();
+				int bias = (i == r) ? 0 : 1;
+
+				rightMin[i - l] = fminf(rightMin[i - l], aabb[0]);
+				rightMax[i - l] = fmaxf(rightMax[i - l], aabb[1]);
+			}
+
+			float cost = INF;
+			int split = l;
+			for (int i = l; i <= r - 1; i++) {
+				float lenx, leny, lenz;
+				float3 leftaabbMin = leftMin[i - l];
+				float3 leftaabbMax = leftMax[i - l];
+				lenx = leftaabbMax.x - leftaabbMin.x;
+				leny = leftaabbMax.y - leftaabbMin.y;
+				lenz = leftaabbMax.z - leftaabbMin.z;
+				float leftS = 2.0 * ((lenx * leny) + (lenx * lenz) + (leny * lenz));
+				float leftCost = leftS * (i - l + 1);
+
+				float3 rightaabbMin = rightMin[i + 1 - l];
+				float3 rightaabbMax = rightMax[i + 1 - l];
+				lenx = rightaabbMax.x - rightaabbMin.x;
+				leny = rightaabbMax.y - rightaabbMin.y;
+				lenz = rightaabbMax.z - rightaabbMin.z;
+				float rightS = 2.0 * ((lenx * leny) + (lenx * lenz) + (leny * lenz));
+				float rightCost = rightS * (r - i);
+
+				float totalCost = leftCost + rightCost;
+				if (totalCost < cost) {
+					cost = totalCost;
+					split = i;
+				}
+			}
+
+			if (cost < Cost) {
+				Cost = cost;
+				Axis = axis;
+				Split = split;
+			}
+		}
+
+		if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
+		if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
+		if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
+
+		nodes[idx].left = BuildBVH_SAH(shapes, nodes, l, Split, n);
+		nodes[idx].right = BuildBVH_SAH(shapes, nodes, Split + 1, r, n);
+
+		return idx;
+	}
+
 
 	// -----------------------------------------------------------
 	// Scene class
@@ -540,101 +645,13 @@ namespace Tmpl8 {
 				//);
 			}
 
-			for (int i = 0; i < shapes.size(); i++) shapeIdx.push_back(i);
-
-			printf("%d\n", shapeIdx.size());
-
-			BVHNode node = BVHNode();
-			nodes.assign(2 * shapes.size() - 1, node);
-			
 			SetTime(0);
 
-			BuildBVH();
+		 	root = BuildBVH_SAH(shapes, nodes, 0, shapes.size(), 2);
 		}
 		
-		void BuildBVH()
-		{
-			// assign all triangles to root node
-			BVHNode& root = nodes[0];
-			root.leftNode = 0;
-			root.firstIdx = 0, root.childN = shapes.size();
-			UpdateNodeBounds(0);
-			// subdivide recursively
-			Subdivide(0);
-		}
+		inline void IntersectBVH(Ray& ray) {
 
-		void UpdateNodeBounds(uint nodeIdx)
-		{
-			BVHNode& node = nodes[nodeIdx];
-			node.aabbMin = float3(1e30f);
-			node.aabbMax = float3(-1e30f);
-			for (uint first = node.firstIdx, i = 0; i < node.childN; i++)
-			{
-				vector<float3> leafAABB = shapes[first + i]->GetAABB();
-				node.aabbMin = fminf(node.aabbMin, leafAABB[0]);
-				node.aabbMax = fmaxf(node.aabbMax, leafAABB[1]);
-			}
-			printf("node: %d, bound min: %f, %f, %f, bound max: %f, %f, %f\n",
-				nodeIdx,
-				node.aabbMin.x, node.aabbMin.y, node.aabbMin.z,
-				node.aabbMax.x, node.aabbMax.y, node.aabbMax.z
-			);
-		}
-
-		void Subdivide(uint nodeIdx)
-		{
-			// terminate recursion
-			BVHNode& node = nodes[nodeIdx];
-			if (node.childN <= 2) return;
-			// determine split axis and position
-			float3 extent = node.aabbMax - node.aabbMin;
-			int axis = 0;
-			if (extent.y > extent.x) axis = 1;
-			if (extent.z > extent[axis]) axis = 2;
-			float splitPos = node.aabbMin[axis] + extent[axis] * 0.5f;
-			// in-place partition
-			int i = node.firstIdx;
-			int j = i + node.childN - 1;
-			while (i <= j)
-			{
-				if (shapes[shapeIdx[i]]->center[axis] < splitPos)
-					i++;
-				else
-					swap(shapeIdx[i], shapeIdx[j--]);
-			}
-			// abort split if one of the sides is empty
-			int leftCount = i - node.firstIdx;
-			if (leftCount == 0 || leftCount == node.childN) return;
-			// create child nodes
-			int leftChildIdx = nodesUsed++;
-			int rightChildIdx = nodesUsed++;
-			node.leftNode = leftChildIdx;
-			nodes[leftChildIdx].firstIdx = node.firstIdx;
-			nodes[leftChildIdx].childN = leftCount;
-			nodes[rightChildIdx].firstIdx = i;
-			nodes[rightChildIdx].childN = node.childN - leftCount;
-			node.childN = 0;
-			UpdateNodeBounds(leftChildIdx);
-			UpdateNodeBounds(rightChildIdx);
-			// recurse
-			Subdivide(leftChildIdx);
-			Subdivide(rightChildIdx);
-		}
-
-		void IntersectBVH(Ray& ray, const uint nodeIdx) const
-		{
-			BVHNode node = nodes[nodeIdx];
-			if (!IntersectAABB(ray, node.aabbMin, node.aabbMax)) return;
-			if (node.childN > 0)
-			{
-				for (uint i = 0; i < node.childN; i++)
-					shapes[shapeIdx[node.firstIdx + i]]->Intersect(ray);
-			}
-			else
-			{
-				IntersectBVH(ray, node.leftNode);
-				IntersectBVH(ray, node.leftNode + 1);
-			}
 		}
 
 		void SetTime(float t)
@@ -746,9 +763,7 @@ namespace Tmpl8 {
 		TriangleMesh mesh;
 
 		vector<Shape*> shapes;
-		vector<int> shapeIdx;
-		int nodesUsed = 1;
-		BVHNode root;
 		vector<BVHNode> nodes;
+		int root;
 	};
 }

@@ -302,9 +302,9 @@ void Renderer::Tick(float deltaTime)
 	//	scene.triangles[0].material.color.z
 	//	);
 
-	//for (int i = 0; i < scene.shapeIdx.size(); i++)
+	//for (int i = 0; i < 10; i++)
 	//{
-	//	printf("%d ", scene.shapeIdx[i]);
+	//	printf("%d ", scene.shapes[i]->objIdx);
 	//}
 	//printf("\n");
 
