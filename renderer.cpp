@@ -88,7 +88,7 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 			}
 		}
 	}
-	return float3(1);
+	return color;
 }
 
 float3 Renderer::PathTrace(Ray& ray, float iter = 0) {
@@ -295,18 +295,6 @@ void Renderer::Tick(float deltaTime)
 	avg = (1 - alpha) * avg + alpha * t.elapsed() * 1000;
 	if (alpha > 0.05f) alpha *= 0.5f;
 	float fps = 1000 / avg, rps = (SCRWIDTH * SCRHEIGHT) * fps;
-	
-	//printf("%f, %f, %f\n%",
-	//	scene.triangles[0].material.color.x,
-	//	scene.triangles[0].material.color.y,
-	//	scene.triangles[0].material.color.z
-	//	);
 
-	//for (int i = 0; i < 10; i++)
-	//{
-	//	printf("%d ", scene.shapes[i]->objIdx);
-	//}
-	//printf("\n");
-
-	//printf("%5.2fms (%.1fps) - %.1fMrays/s\n", avg, fps, rps / 1000000);
+	printf("%5.2fms (%.1fps) - %.1fMrays/s\n", avg, fps, rps / 1000000);
 }

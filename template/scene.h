@@ -478,102 +478,8 @@ namespace Tmpl8 {
 		tmin = max(tmin, min(ty1, ty2)), tmax = min(tmax, max(ty1, ty2));
 		float tz1 = (bmin.z - ray.O.z) / ray.D.z, tz2 = (bmax.z - ray.O.z) / ray.D.z;
 		tmin = max(tmin, min(tz1, tz2)), tmax = min(tmax, max(tz1, tz2));
-		return tmax >= tmin && tmin < ray.t&& tmax > 0;
+		return tmax >= tmin && tmin < ray.t && tmax > 0;
 	}
-
-	inline int BuildBVH_SAH(vector<Shape*>& shapes, vector<BVHNode>& nodes, int l, int r, int n) {
-		if (l > r) return 0;
-
-		int idx = nodes.size();
-		nodes.push_back(BVHNode());
-
-		nodes[idx].aabbMin = float3(INF);
-		nodes[idx].aabbMax = float3(-INF);
-
-		for (int i = l; i <= r; i++) {
-			vector<float3> aabb = shapes[i]->GetAABB();
-			nodes[idx].aabbMin = fminf(nodes[idx].aabbMin, aabb[0]);
-			nodes[idx].aabbMax = fmaxf(nodes[idx].aabbMax, aabb[1]);
-		}
-
-		if ((r - l + 1) <= n) {
-			nodes[idx].n = r - l + 1;
-			nodes[idx].index = l;
-			return idx;
-		}
-
-		float Cost = INF;
-		int Axis = 0;
-		int Split = (l + r) / 2;
-		for (int axis = 0; axis < 3; axis++) {
-			if (axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
-			if (axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
-			if (axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
-
-			vector<float3> leftMax(r - l + 1, float3(-INF));
-			vector<float3> leftMin(r - l + 1, float3(INF));
-			for (int i = l; i <= r; i++) {
-				vector<float3> aabb = shapes[i]->GetAABB();
-				int bias = (i == l) ? 0 : 1;
-
-				leftMin[i - l] = fminf(leftMin[i - l], aabb[0]);
-				leftMax[i - l] = fmaxf(leftMax[i - l], aabb[1]);
-			}
-
-			vector<float3> rightMax(r - l + 1, float3(-INF));
-			vector<float3> rightMin(r - l + 1, float3(INF));
-			for (int i = r; i >= l; i--) {
-				vector<float3> aabb = shapes[i]->GetAABB();
-				int bias = (i == r) ? 0 : 1;
-
-				rightMin[i - l] = fminf(rightMin[i - l], aabb[0]);
-				rightMax[i - l] = fmaxf(rightMax[i - l], aabb[1]);
-			}
-
-			float cost = INF;
-			int split = l;
-			for (int i = l; i <= r - 1; i++) {
-				float lenx, leny, lenz;
-				float3 leftaabbMin = leftMin[i - l];
-				float3 leftaabbMax = leftMax[i - l];
-				lenx = leftaabbMax.x - leftaabbMin.x;
-				leny = leftaabbMax.y - leftaabbMin.y;
-				lenz = leftaabbMax.z - leftaabbMin.z;
-				float leftS = 2.0 * ((lenx * leny) + (lenx * lenz) + (leny * lenz));
-				float leftCost = leftS * (i - l + 1);
-
-				float3 rightaabbMin = rightMin[i + 1 - l];
-				float3 rightaabbMax = rightMax[i + 1 - l];
-				lenx = rightaabbMax.x - rightaabbMin.x;
-				leny = rightaabbMax.y - rightaabbMin.y;
-				lenz = rightaabbMax.z - rightaabbMin.z;
-				float rightS = 2.0 * ((lenx * leny) + (lenx * lenz) + (leny * lenz));
-				float rightCost = rightS * (r - i);
-
-				float totalCost = leftCost + rightCost;
-				if (totalCost < cost) {
-					cost = totalCost;
-					split = i;
-				}
-			}
-
-			if (cost < Cost) {
-				Cost = cost;
-				Axis = axis;
-				Split = split;
-			}
-		}
-
-		if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
-		if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
-		if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
-
-		nodes[idx].left = BuildBVH_SAH(shapes, nodes, l, Split, n);
-		nodes[idx].right = BuildBVH_SAH(shapes, nodes, Split + 1, r, n);
-
-		return idx;
-	}
-
 
 	// -----------------------------------------------------------
 	// Scene class
@@ -597,7 +503,7 @@ namespace Tmpl8 {
 			Material light = Material(float3(1, 1, 1), float3(0), Light);
 
 			quad = Quad(0, 1, light, mat4::Identity());						// 0: light source
-			sphere = Sphere(1, float3(0), 0.5f, yellow);				// 1: bouncing ball
+			sphere = Sphere(1, float3(0), 0.5f, green);				// 1: bouncing ball
 			sphere2 = Sphere(2, float3(0, 2.5f, -3.07f), 8, white);	// 2: rounded corners
 			cube = Cube(3, float3(0), float3(1.15f), purple, mat4::Identity());									// 3: cube
 			
@@ -619,12 +525,24 @@ namespace Tmpl8 {
 			//shapes.push_back(&plane[4]);
 			//shapes.push_back(&plane[5]);
 
+			//for (int i = 0; i < shapes.size(); i++) {
+			//	printf("index: %d, min: %f, %f, %f, max: %f, %f, %f\n",
+			//		shapes[i]->objIdx,
+			//		shapes[i]->GetAABB()[0].x,
+			//		shapes[i]->GetAABB()[0].y,
+			//		shapes[i]->GetAABB()[0].z,
+			//		shapes[i]->GetAABB()[1].x,
+			//		shapes[i]->GetAABB()[1].y,
+			//		shapes[i]->GetAABB()[1].z
+			//	);
+			//}
+
 			mesh = TriangleMesh(0, "assets/bunny.obj");
 
-			printf("vertices: %d, triangles: %d\n", 
-				mesh.vertices.size(),
-				mesh.triangles.size()
-			);
+			//printf("vertices: %d, triangles: %d\n", 
+			//	mesh.vertices.size(),
+			//	mesh.triangles.size()
+			//);
 
 			for (int i = 0; i < mesh.triangles.size(); i++) {
 				mesh.triangles[i].objIdx = 4 + i;
@@ -641,17 +559,138 @@ namespace Tmpl8 {
 				//	mesh.triangles[i].GetAABB()[1].x,
 				//	mesh.triangles[i].GetAABB()[1].y,
 				//	mesh.triangles[i].GetAABB()[1].z
-				//
+				//);
+				//printf("index: %d, min: %f, %f, %f, max: %f, %f, %f\n",
+				//	shapes[4 + i]->objIdx,
+				//	shapes[4 + i]->GetAABB()[0].x,
+				//	shapes[4 + i]->GetAABB()[0].y,
+				//	shapes[4 + i]->GetAABB()[0].z,
+				//	shapes[4 + i]->GetAABB()[1].x,
+				//	shapes[4 + i]->GetAABB()[1].y,
+				//	shapes[4 + i]->GetAABB()[1].z
 				//);
 			}
 
+			//for (int i = 0; i < shapes.size(); i++) {
+			//	vector<float3> aabb = shapes[i]->GetAABB();
+			//}
+
 			SetTime(0);
 
-		 	root = BuildBVH_SAH(shapes, nodes, 0, shapes.size(), 2);
+		 	root = BuildBVH_SAH(0, shapes.size()-1, 2);
+		}
+
+		int BuildBVH_SAH(int l, int r, int n) {
+			if (l > r) return 0;
+
+			int idx = nodes.size();
+			nodes.push_back(BVHNode());
+			nodes[idx].left = nodes[idx].right = nodes[idx].n = nodes[idx].index = 0;
+
+			nodes[idx].aabbMin = float3(INF);
+			nodes[idx].aabbMax = float3(-INF);
+
+			for (int i = l; i <= r; i++) {
+				vector<float3> aabb = this->shapes[i]->GetAABB();
+				nodes[idx].aabbMin = fminf(nodes[idx].aabbMin, aabb[0]);
+				nodes[idx].aabbMax = fmaxf(nodes[idx].aabbMax, aabb[1]);
+			}
+
+			if ((r - l + 1) <= n) {
+				nodes[idx].n = r - l + 1;
+				nodes[idx].index = l;
+				return idx;
+			}
+
+			float Cost = INF;
+			int Axis = 0;
+			int Split = (l + r) / 2;
+			for (int axis = 0; axis < 3; axis++) {
+				if (axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
+				if (axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
+				if (axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
+
+				vector<float3> leftMax(r - l + 1, float3(-INF));
+				vector<float3> leftMin(r - l + 1, float3(INF));
+				for (int i = l; i <= r; i++) {
+					vector<float3> aabb = shapes[i]->GetAABB();
+					int bias = (i == l) ? 0 : 1;
+
+					leftMin[i - l] = fminf(leftMin[i - l], aabb[0]);
+					leftMax[i - l] = fmaxf(leftMax[i - l], aabb[1]);
+				}
+
+				vector<float3> rightMax(r - l + 1, float3(-INF));
+				vector<float3> rightMin(r - l + 1, float3(INF));
+				for (int i = r; i >= l; i--) {
+					vector<float3> aabb = shapes[i]->GetAABB();
+					int bias = (i == r) ? 0 : 1;
+
+					rightMin[i - l] = fminf(rightMin[i - l], aabb[0]);
+					rightMax[i - l] = fmaxf(rightMax[i - l], aabb[1]);
+				}
+
+				float cost = INF;
+				int split = l;
+				for (int i = l; i <= r - 1; i++) {
+					float lenx, leny, lenz;
+					float3 leftaabbMin = leftMin[i - l];
+					float3 leftaabbMax = leftMax[i - l];
+					lenx = leftaabbMax.x - leftaabbMin.x;
+					leny = leftaabbMax.y - leftaabbMin.y;
+					lenz = leftaabbMax.z - leftaabbMin.z;
+					float leftS = 2.0 * ((lenx * leny) + (lenx * lenz) + (leny * lenz));
+					float leftCost = leftS * (i - l + 1);
+
+					float3 rightaabbMin = rightMin[i + 1 - l];
+					float3 rightaabbMax = rightMax[i + 1 - l];
+					lenx = rightaabbMax.x - rightaabbMin.x;
+					leny = rightaabbMax.y - rightaabbMin.y;
+					lenz = rightaabbMax.z - rightaabbMin.z;
+					float rightS = 2.0 * ((lenx * leny) + (lenx * lenz) + (leny * lenz));
+					float rightCost = rightS * (r - i);
+
+					float totalCost = leftCost + rightCost;
+					if (totalCost < cost) {
+						cost = totalCost;
+						split = i;
+					}
+				}
+
+				if (cost < Cost) {
+					Cost = cost;
+					Axis = axis;
+					Split = split;
+				}
+			}
+
+			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
+			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
+			if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
+
+			int left = BuildBVH_SAH(l, Split, n);
+			int right = BuildBVH_SAH(Split + 1, r, n);
+
+			nodes[idx].left = left;
+			nodes[idx].right = right;
+
+			return idx;
 		}
 		
-		inline void IntersectBVH(Ray& ray) {
-
+		void IntersectBVH(Ray& ray, int nodeIdx) const
+		{
+			BVHNode node = nodes[nodeIdx];
+			if (!IntersectAABB(ray, node.aabbMin, node.aabbMax)) return;
+			if (node.n > 0)
+			{
+				for (uint i = 0; i < node.n; i++)
+					shapes[node.index + i]->Intersect(ray);
+			}
+			else
+			{
+				IntersectBVH(ray, node.left);
+				IntersectBVH(ray, node.right);
+			}
 		}
 
 		void SetTime(float t)
@@ -702,21 +741,12 @@ namespace Tmpl8 {
 		}
 		void FindNearest(Ray& ray) const
 		{
-			IntersectBVH(ray, 0);
-			//quad.Intersect(ray);
-			//sphere.Intersect(ray);
-			//sphere2.Intersect(ray);
-			//cube.Intersect(ray);
+			IntersectBVH(ray, root);
 		}
 		bool IsOccluded(Ray& ray) const
 		{
 			float rayLength = ray.t;
-			// skip planes: it is not possible for the walls to occlude anything
-			IntersectBVH(ray, 0);
-			//quad.Intersect(ray);
-			//sphere.Intersect(ray);
-			//sphere2.Intersect(ray);
-			//cube.Intersect(ray);
+			IntersectBVH(ray, root);
 			return ray.t < rayLength;
 			// technically this is wasteful: 
 			// - we potentially search beyond rayLength
@@ -725,9 +755,7 @@ namespace Tmpl8 {
 		}
 		float3 GetNormal(int objIdx, float3 I, float3 wo) const
 		{
-			// we get the normal after finding the nearest intersection:
-			// this way we prevent calculating it multiple times.
-			if (objIdx == -1) return float3(0); // or perhaps we should just crash
+			if (objIdx == -1) return float3(0); 
 			float3 N;
 			N = shapes[objIdx]->GetNormal(I);
 			if (dot(N, wo) > 0) N = -N; // hit backside / inside
@@ -735,7 +763,7 @@ namespace Tmpl8 {
 		}
 		float3 GetAlbedo(int objIdx, float3 I) const
 		{
-			if (objIdx == -1) return float3(0); // or perhaps we should just crash
+			if (objIdx == -1) return float3(0);
 			return shapes[objIdx]->material.albedo;
 			// once we have triangle support, we should pass objIdx and the bary-
 			// centric coordinates of the hit, instead of the intersection location.
