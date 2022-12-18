@@ -418,7 +418,7 @@ namespace Tmpl8 {
 
 			int faceIdx = 0;
 
-			material = Material(float3(1), float3(0), Diffuse);
+			material = Material(float3(1, 0.5, 0), float3(0), Diffuse);
 
 			// Read the file line by line
 			string line;
@@ -501,11 +501,12 @@ namespace Tmpl8 {
 			Material yellow = Material(float3(1, 0.8, 0), float3(0), Mirror);
 			Material white = Material(float3(1, 1, 1), float3(0), Diffuse);
 			Material light = Material(float3(1, 1, 1), float3(0), Light);
+			Material mirror = Material(float3(1, 1, 1), float3(0), Mirror);
 
 			quad = Quad(0, 1, light, mat4::Identity());						// 0: light source
-			sphere = Sphere(1, float3(0), 0.5f, green);				// 1: bouncing ball
+			sphere = Sphere(1, float3(0), 0.5f, yellow);				// 1: bouncing ball
 			sphere2 = Sphere(2, float3(0, 2.5f, -3.07f), 8, white);	// 2: rounded corners
-			cube = Cube(3, float3(0), float3(1.15f), purple, mat4::Identity());									// 3: cube
+			//cube = Cube(3, float3(0), float3(1.15f), purple, mat4::Identity());									// 3: cube
 			
 			//plane[0] = Plane(4, float3(1, 0, 0), 3, red);									// 4: left wall
 			//plane[1] = Plane(5, float3(-1, 0, 0), 2.99f, blue);								// 5: right wall
@@ -545,7 +546,6 @@ namespace Tmpl8 {
 			//);
 
 			for (int i = 0; i < mesh.triangles.size(); i++) {
-				mesh.triangles[i].objIdx = 4 + i;
 				//printf("normal: %f, %f, %f\n", 
 				//	mesh.triangles[i].GetNormal(float3(0)).x,
 				//	mesh.triangles[i].GetNormal(float3(0)).y,
@@ -578,6 +578,10 @@ namespace Tmpl8 {
 			SetTime(0);
 
 		 	root = BuildBVH_SAH(0, shapes.size()-1, 2);
+
+			for (int i = 0; i < shapes.size(); i++) {
+				shapes[i]->objIdx = i;
+			}
 		}
 
 		int BuildBVH_SAH(int l, int r, int n) {
@@ -719,7 +723,7 @@ namespace Tmpl8 {
 			quad.T = M1, quad.invT = M1.FastInvertedTransformNoScale();
 
 			mat4 M2 = mat4::Translate(float3(2.4f, 0, 2));
-			cube.T = M2, cube.invT = M2.FastInvertedTransformNoScale();
+			//cube.T = M2, cube.invT = M2.FastInvertedTransformNoScale();
 	
 			sphere.center = float3(-2.4f, 0.2, 2);
 		

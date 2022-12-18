@@ -45,7 +45,7 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	}
 
 	if (mat == Diffuse) {
-		return color / distance;
+		return color / (0.5 * distance);
 	}
 	if (mat == Mirror) {
 		float3 reflectRayDir = normalize(reflect(ray.D, N));
