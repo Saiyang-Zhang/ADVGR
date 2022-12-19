@@ -11,6 +11,8 @@ void Renderer::Init()
 	srand(time(0));
 	//This is the counter for real time sampling for path tracing
 	sample = 1;
+
+
 }
 
 // -----------------------------------------------------------

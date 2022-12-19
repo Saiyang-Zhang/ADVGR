@@ -128,7 +128,7 @@ namespace Tmpl8 {
 		virtual void Intersect(Ray& ray) const = 0;
 		virtual float3 GetNormal(const float3 I) const = 0;
 		virtual float3 GetCenter() const = 0;
-		virtual vector<float3> GetAABB() const = 0;
+		virtual aabb GetAABB() const = 0;
 		
 		int objIdx = -1;
 		Material material;
@@ -179,12 +179,9 @@ namespace Tmpl8 {
 		{
 			return this->center;
 		}
-		vector<float3> GetAABB() const
+		aabb GetAABB() const
 		{
-			vector<float3> aabb;
-			aabb.push_back(this->center - r);
-			aabb.push_back(this->center + r);
-			return aabb;
+			return aabb(this->center - r, this->center + r);
 		}
 		float r, invr;
 	};
@@ -287,14 +284,11 @@ namespace Tmpl8 {
 		{
 			return TransformPosition(center, invT);
 		}
-		vector<float3> GetAABB() const
+		aabb GetAABB() const
 		{
-			vector<float3> aabb;
 			float3 b0 = TransformPosition(b[0], invT);
 			float3 b1 = TransformPosition(b[1], invT);
-			aabb.push_back(fminf(b0, b1));
-			aabb.push_back(fmaxf(b0, b1));
-			return aabb;
+			return aabb(b0, b1);
 		}
 		float3 b[2];
 	};
@@ -337,14 +331,11 @@ namespace Tmpl8 {
 			float3 corner2 = TransformPosition(float3(0.5f, 0, 0.5f), T);
 			return (corner1 + corner2) * 0.5f;
 		}
-		vector<float3> GetAABB() const
+		aabb GetAABB() const
 		{
-			vector<float3> aabb;
 			float3 corner1 = TransformPosition(float3(-0.5f, 0, -0.5f), T);
 			float3 corner2 = TransformPosition(float3(0.5f, 0, 0.5f), T);
-			aabb.push_back(fminf(corner1, corner2));
-			aabb.push_back(fmaxf(corner1, corner2));
-			return aabb;
+			return aabb(corner1, corner2);
 		}
 		float size;
 	};
@@ -394,12 +385,9 @@ namespace Tmpl8 {
 		{
 			return TransformPosition(center, invT);
 		}
-		vector<float3> GetAABB() const
-		{
-			vector<float3> aabb;
-			aabb.push_back(fminf(fminf(v0, v1), v2));
-			aabb.push_back(fmaxf(fmaxf(v0, v1), v2));
-			return aabb;
+		aabb GetAABB() const
+		{   
+			return aabb(fminf(fminf(v0, v1), v2), fmaxf(fmaxf(v0, v1), v2));
 		}
 		float3 v0, v1, v2, N;
 	};
@@ -455,19 +443,19 @@ namespace Tmpl8 {
 
 
 	inline bool cmpx(const Shape* s1, const Shape* s2) {
-		return s1->GetCenter().x < s2->GetCenter().x;
+		return s1->GetAABB().Center(0) < s2->GetAABB().Center(0);
 	}
 	inline bool cmpy(const Shape* s1, const Shape* s2) {
-		return s1->GetCenter().y < s2->GetCenter().y;
+		return s1->GetAABB().Center(1) < s2->GetAABB().Center(1);
 	}
 	inline bool cmpz(const Shape* s1, const Shape* s2) {
-		return s1->GetCenter().z < s2->GetCenter().z;
+		return s1->GetAABB().Center(2) < s2->GetAABB().Center(2);
 	}
 
 	struct BVHNode {
-		int left, right;
-		int n, index;                          
-		float3 aabbMin, aabbMax;
+		int left, right;	//index of left and right child
+		int n, index;		//n children in leaf node, index is idex of the first shape                     
+		aabb aabb;			//aabb
 	};
 
 	inline bool IntersectAABB(const Ray & ray, const float3 bmin, const float3 bmax)
@@ -506,7 +494,7 @@ namespace Tmpl8 {
 			quad = Quad(0, 1, light, mat4::Identity());						// 0: light source
 			sphere = Sphere(1, float3(0), 0.5f, yellow);				// 1: bouncing ball
 			sphere2 = Sphere(2, float3(0, 2.5f, -3.07f), 8, white);	// 2: rounded corners
-			//cube = Cube(3, float3(0), float3(1.15f), purple, mat4::Identity());									// 3: cube
+			cube = Cube(3, float3(0), float3(1.15f), purple, mat4::Identity());									// 3: cube
 			
 			//plane[0] = Plane(4, float3(1, 0, 0), 3, red);									// 4: left wall
 			//plane[1] = Plane(5, float3(-1, 0, 0), 2.99f, blue);								// 5: right wall
@@ -546,11 +534,6 @@ namespace Tmpl8 {
 			//);
 
 			for (int i = 0; i < mesh.triangles.size(); i++) {
-				//printf("normal: %f, %f, %f\n", 
-				//	mesh.triangles[i].GetNormal(float3(0)).x,
-				//	mesh.triangles[i].GetNormal(float3(0)).y,
-				//	mesh.triangles[i].GetNormal(float3(0)).z
-				//);
 				shapes.push_back(&mesh.triangles[i]);
 				//printf("min: %f, %f, %f, max: %f, %f, %f\n", 
 				//	mesh.triangles[i].GetAABB()[0].x,
@@ -559,15 +542,6 @@ namespace Tmpl8 {
 				//	mesh.triangles[i].GetAABB()[1].x,
 				//	mesh.triangles[i].GetAABB()[1].y,
 				//	mesh.triangles[i].GetAABB()[1].z
-				//);
-				//printf("index: %d, min: %f, %f, %f, max: %f, %f, %f\n",
-				//	shapes[4 + i]->objIdx,
-				//	shapes[4 + i]->GetAABB()[0].x,
-				//	shapes[4 + i]->GetAABB()[0].y,
-				//	shapes[4 + i]->GetAABB()[0].z,
-				//	shapes[4 + i]->GetAABB()[1].x,
-				//	shapes[4 + i]->GetAABB()[1].y,
-				//	shapes[4 + i]->GetAABB()[1].z
 				//);
 			}
 
@@ -585,98 +559,82 @@ namespace Tmpl8 {
 		}
 
 		int BuildBVH_SAH(int l, int r, int n) {
+			//no nodes 
 			if (l > r) return 0;
 
+			//generate newest node
 			int idx = nodes.size();
 			nodes.push_back(BVHNode());
-			nodes[idx].left = nodes[idx].right = nodes[idx].n = nodes[idx].index = 0;
+			nodes[idx].left = -1;
+			nodes[idx].right = -1;
+			nodes[idx].n = -1;
+			nodes[idx].index = -1;
 
-			nodes[idx].aabbMin = float3(INF);
-			nodes[idx].aabbMax = float3(-INF);
+			nodes[idx].aabb = aabb(float3(INF), float3(-INF));
 
+			//update node boundary
 			for (int i = l; i <= r; i++) {
-				vector<float3> aabb = this->shapes[i]->GetAABB();
-				nodes[idx].aabbMin = fminf(nodes[idx].aabbMin, aabb[0]);
-				nodes[idx].aabbMax = fmaxf(nodes[idx].aabbMax, aabb[1]);
+				nodes[idx].aabb = nodes[idx].aabb.Union(this->shapes[i]->GetAABB());
 			}
 
+			//if less than n shapes in this node, then this is a leaf node
 			if ((r - l + 1) <= n) {
 				nodes[idx].n = r - l + 1;
 				nodes[idx].index = l;
 				return idx;
 			}
 
-			float Cost = INF;
-			int Axis = 0;
-			int Split = (l + r) / 2;
+			//using surface area heuristic
+			float Cost = INF;						//cost of the current split method
+			int Axis = 0;							//axis of the current split method
+			int Split;
+
+			//compute the least cost in each axis
 			for (int axis = 0; axis < 3; axis++) {
 				if (axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
 				if (axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
 				if (axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
 
-				vector<float3> leftMax(r - l + 1, float3(-INF));
-				vector<float3> leftMin(r - l + 1, float3(INF));
-				for (int i = l; i <= r; i++) {
-					vector<float3> aabb = shapes[i]->GetAABB();
-					int bias = (i == l) ? 0 : 1;
-
-					leftMin[i - l] = fminf(leftMin[i - l], aabb[0]);
-					leftMax[i - l] = fmaxf(leftMax[i - l], aabb[1]);
+				//compute the left node cost of all split method
+				vector<float> leftS;
+				aabb aabbLeft = shapes[l]->GetAABB();
+				for (int i = l; i < r; i++) {
+					aabbLeft.Union(shapes[i]->GetAABB());
+					leftS.push_back(aabbLeft.Area());
 				}
 
-				vector<float3> rightMax(r - l + 1, float3(-INF));
-				vector<float3> rightMin(r - l + 1, float3(INF));
-				for (int i = r; i >= l; i--) {
-					vector<float3> aabb = shapes[i]->GetAABB();
-					int bias = (i == r) ? 0 : 1;
-
-					rightMin[i - l] = fminf(rightMin[i - l], aabb[0]);
-					rightMax[i - l] = fmaxf(rightMax[i - l], aabb[1]);
+				//compute the right node cost of all split method
+				vector<float> rightS;
+				aabb aabbRight = shapes[r]->GetAABB();
+				for (int i = r; i > l; i--) {
+					aabbRight.Union(shapes[i]->GetAABB());
+					rightS.push_back(aabbRight.Area());
 				}
 
-				float cost = INF;
-				int split = l;
-				for (int i = l; i <= r - 1; i++) {
-					float lenx, leny, lenz;
-					float3 leftaabbMin = leftMin[i - l];
-					float3 leftaabbMax = leftMax[i - l];
-					lenx = leftaabbMax.x - leftaabbMin.x;
-					leny = leftaabbMax.y - leftaabbMin.y;
-					lenz = leftaabbMax.z - leftaabbMin.z;
-					float leftS = 2.0 * ((lenx * leny) + (lenx * lenz) + (leny * lenz));
-					float leftCost = leftS * (i - l + 1);
-
-					float3 rightaabbMin = rightMin[i + 1 - l];
-					float3 rightaabbMax = rightMax[i + 1 - l];
-					lenx = rightaabbMax.x - rightaabbMin.x;
-					leny = rightaabbMax.y - rightaabbMin.y;
-					lenz = rightaabbMax.z - rightaabbMin.z;
-					float rightS = 2.0 * ((lenx * leny) + (lenx * lenz) + (leny * lenz));
-					float rightCost = rightS * (r - i);
+				//compare the cost of all split methods
+				for (int i = 0; i < r - l; i++) {
+					float leftCost = leftS[i] * (i + 1);
+					float rightCost = rightS[r - l - i] * (r - l - i);
 
 					float totalCost = leftCost + rightCost;
-					if (totalCost < cost) {
-						cost = totalCost;
-						split = i;
+					if (totalCost < Cost) {
+						Cost = totalCost;
+						Axis = axis;
+						Split = l + i;
 					}
 				}
-
-				if (cost < Cost) {
-					Cost = cost;
-					Axis = axis;
-					Split = split;
-				}
 			}
+
+			Axis = nodes[idx].aabb.LongestAxis();
+
+			Split = (l + r) / 2;
 
 			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
 			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
 			if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
 
-			int left = BuildBVH_SAH(l, Split, n);
-			int right = BuildBVH_SAH(Split + 1, r, n);
-
-			nodes[idx].left = left;
-			nodes[idx].right = right;
+			nodes[idx].left = BuildBVH_SAH(l, Split, n);
+			nodes[idx].right = BuildBVH_SAH(Split + 1, r, n);
 
 			return idx;
 		}
@@ -684,7 +642,9 @@ namespace Tmpl8 {
 		void IntersectBVH(Ray& ray, int nodeIdx) const
 		{
 			BVHNode node = nodes[nodeIdx];
-			if (!IntersectAABB(ray, node.aabbMin, node.aabbMax)) return;
+			float3 aabbMin = float3(node.aabb.Minimum(0), node.aabb.Minimum(1), node.aabb.Minimum(2));
+			float3 aabbMax = float3(node.aabb.Maximum(0), node.aabb.Maximum(1), node.aabb.Maximum(2));
+			if (!IntersectAABB(ray, aabbMin, aabbMax)) return;
 			if (node.n > 0)
 			{
 				for (uint i = 0; i < node.n; i++)
@@ -696,6 +656,22 @@ namespace Tmpl8 {
 				IntersectBVH(ray, node.right);
 			}
 		}
+
+		//void IsoccludedBVH(Ray& ray, int nodeIdx) const
+		//{
+		//	BVHNode node = nodes[nodeIdx];
+		//	if (!IntersectAABB(ray, node.aabbMin, node.aabbMax)) return;
+		//	if (node.n > 0)
+		//	{
+		//		for (uint i = 0; i < node.n; i++)
+		//			shapes[node.index + i]->Intersect(ray);
+		//	}
+		//	else
+		//	{
+		//		IntersectBVH(ray, node.left);
+		//		IntersectBVH(ray, node.right);
+		//	}
+		//}
 
 		void SetTime(float t)
 		{
@@ -723,7 +699,7 @@ namespace Tmpl8 {
 			quad.T = M1, quad.invT = M1.FastInvertedTransformNoScale();
 
 			mat4 M2 = mat4::Translate(float3(2.4f, 0, 2));
-			//cube.T = M2, cube.invT = M2.FastInvertedTransformNoScale();
+			cube.T = M2, cube.invT = M2.FastInvertedTransformNoScale();
 	
 			sphere.center = float3(-2.4f, 0.2, 2);
 		
