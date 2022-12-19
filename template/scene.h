@@ -187,37 +187,6 @@ namespace Tmpl8 {
 	};
 
 	// -----------------------------------------------------------
-	// Plane Shape
-	// Basic infinite plane, defined by a normal and a distance
-	// from the origin (in the direction of the normal).
-	// -----------------------------------------------------------
-	//class Plane : public Shape
-	//{
-	//public:
-	//	Plane() = default;
-	//	Plane(int objIdx, float3 normal, float dist, Material material) : N(normal), d(dist) 
-	//	{
-	//		this->objIdx = objIdx;
-	//		this->material = material;
-	//	}
-	//	void Intersect(Ray& ray) const
-	//	{
-	//		float t = -(dot(ray.O, this->N) + this->d) / (dot(ray.D, this->N));
-	//		if (t < ray.t && t > 0) ray.t = t, ray.objIdx = this->objIdx;
-	//	}
-	//	float3 GetNormal(const float3 I) const
-	//	{
-	//		return N;
-	//	}
-	//	BoundingBox GetAABB() const
-	//	{
-	//		return this->aabb;
-	//	}
-	//	float3 N;
-	//	float d;
-	//};
-
-	// -----------------------------------------------------------
 	// Cube Shape
 	// Oriented cube. Unsure if this will also work for rays that
 	// start inside it; maybe not the best candidate for testing
@@ -294,19 +263,19 @@ namespace Tmpl8 {
 	};
 
 	// -----------------------------------------------------------
-	// Quad Shape
+	// Plane Shape
 	// Oriented quad, intended to be used as a light source.
 	// -----------------------------------------------------------
-	class Quad : public Shape
+	class Plane : public Shape
 	{
 	public:
-		Quad() = default;
-		Quad(int objIdx, float s, Material material, mat4 transform = mat4::Identity())
+		Plane() = default;
+		Plane(int objIdx, float s, Material material, mat4 transform = mat4::Identity())
 		{
 			this->objIdx = objIdx;
 			this->material = material;
-			size = s * 0.5f;
 			this->T = transform, this->invT = transform.FastInvertedTransformNoScale();
+			size = 0.5 * s;
 		}
 		void Intersect(Ray& ray) const
 		{
@@ -322,7 +291,6 @@ namespace Tmpl8 {
 		}
 		float3 GetNormal(const float3 I) const
 		{
-			// TransformVector( float3( 0, -1, 0 ), T ) 
 			return float3(-T.cell[1], -T.cell[5], -T.cell[9]);
 		}
 		float3 GetCenter() const
@@ -441,7 +409,6 @@ namespace Tmpl8 {
 		Material material;
 	};
 
-
 	inline bool cmpx(const Shape* s1, const Shape* s2) {
 		return s1->GetAABB().Center(0) < s2->GetAABB().Center(0);
 	}
@@ -491,62 +458,36 @@ namespace Tmpl8 {
 			Material light = Material(float3(1, 1, 1), float3(0), Light);
 			Material mirror = Material(float3(1, 1, 1), float3(0), Mirror);
 
-			quad = Quad(0, 1, light, mat4::Identity());						// 0: light source
-			sphere = Sphere(1, float3(0), 0.5f, yellow);				// 1: bouncing ball
-			sphere2 = Sphere(2, float3(0, 2.5f, -3.07f), 8, white);	// 2: rounded corners
-			cube = Cube(3, float3(0), float3(1.15f), purple, mat4::Identity());									// 3: cube
+			mat4 leftT = mat4::Translate(float3(-4, 3, 0)) * mat4::RotateZ(PI / 2);
+			mat4 rightT = mat4::Translate(float3(4, 3, 0)) * mat4::RotateZ(-PI / 2);
+			mat4 topT = mat4::Translate(float3(0, 7, 0));
+			mat4 botT = mat4::Translate(float3(0, -1, 0)) * mat4::RotateZ(PI);
+			mat4 frontT = mat4::Translate(float3(0, 3, -4)) * mat4::RotateX(PI / 2);
+			mat4 backT = mat4::Translate(float3(0, 3, 4)) * mat4::RotateX(-PI / 2);;
+
+			plane[0] = Plane(0, 1, light, mat4::Identity());							// light source
+			plane[1] = Plane(1, 8, red, leftT);									// left wall
+			plane[2] = Plane(2, 8, blue, rightT);									// right wall
+			plane[3] = Plane(3, 8, white, botT);									// floor
+			plane[4] = Plane(4, 8, white, topT);									// ceiling
+			plane[5] = Plane(5, 8, green, frontT);									// front wall
+			plane[6] = Plane(6, 8, white, backT);									// back wall
+			sphere = Sphere(6, float3(0), 0.5f, yellow);								// bouncing ball
+			sphere2 = Sphere(6, float3(0), 8.0f, white);
+			cube = Cube(8, float3(0), float3(1.15f), purple, mat4::Identity());			// cube
 			
-			//plane[0] = Plane(4, float3(1, 0, 0), 3, red);									// 4: left wall
-			//plane[1] = Plane(5, float3(-1, 0, 0), 2.99f, blue);								// 5: right wall
-			//plane[2] = Plane(6, float3(0, 1, 0), 1, white);									// 6: floor
-			//plane[3] = Plane(7, float3(0, -1, 0), 2, white);									// 7: ceiling
-			//plane[4] = Plane(8, float3(0, 0, 1), 3, green);									// 8: front wall
-			//plane[5] = Plane(9, float3(0, 0, -1), 3.99f, white);								// 9: back wall
-			
-			shapes.push_back(&quad);
+			for (int i = 0; i < 7; i++) {
+				shapes.push_back(&plane[i]);
+			}
+
 			shapes.push_back(&sphere);
 			shapes.push_back(&sphere2);
 			shapes.push_back(&cube);
-			//shapes.push_back(&plane[0]);
-			//shapes.push_back(&plane[1]);
-			//shapes.push_back(&plane[2]);
-			//shapes.push_back(&plane[3]);
-			//shapes.push_back(&plane[4]);
-			//shapes.push_back(&plane[5]);
-
-			//for (int i = 0; i < shapes.size(); i++) {
-			//	printf("index: %d, min: %f, %f, %f, max: %f, %f, %f\n",
-			//		shapes[i]->objIdx,
-			//		shapes[i]->GetAABB()[0].x,
-			//		shapes[i]->GetAABB()[0].y,
-			//		shapes[i]->GetAABB()[0].z,
-			//		shapes[i]->GetAABB()[1].x,
-			//		shapes[i]->GetAABB()[1].y,
-			//		shapes[i]->GetAABB()[1].z
-			//	);
-			//}
 
 			mesh = TriangleMesh(0, "assets/bunny.obj");
 
-			//printf("vertices: %d, triangles: %d\n", 
-			//	mesh.vertices.size(),
-			//	mesh.triangles.size()
-			//);
-
-			for (int i = 0; i < mesh.triangles.size(); i++) {
-				shapes.push_back(&mesh.triangles[i]);
-				//printf("min: %f, %f, %f, max: %f, %f, %f\n", 
-				//	mesh.triangles[i].GetAABB()[0].x,
-				//	mesh.triangles[i].GetAABB()[0].y,
-				//	mesh.triangles[i].GetAABB()[0].z,
-				//	mesh.triangles[i].GetAABB()[1].x,
-				//	mesh.triangles[i].GetAABB()[1].y,
-				//	mesh.triangles[i].GetAABB()[1].z
-				//);
-			}
-
-			//for (int i = 0; i < shapes.size(); i++) {
-			//	vector<float3> aabb = shapes[i]->GetAABB();
+			//for (int i = 0; i < mesh.triangles.size(); i++) {
+			//	shapes.push_back(&mesh.triangles[i]);
 			//}
 
 			SetTime(0);
@@ -589,41 +530,41 @@ namespace Tmpl8 {
 			int Axis = 0;							//axis of the current split method
 			int Split;
 
-			//compute the least cost in each axis
-			for (int axis = 0; axis < 3; axis++) {
-				if (axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
-				if (axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
-				if (axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
+			////compute the least cost in each axis
+			//for (int axis = 0; axis < 3; axis++) {
+			//	if (axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
+			//	if (axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
+			//	if (axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
 
-				//compute the left node cost of all split method
-				vector<float> leftS;
-				aabb aabbLeft = shapes[l]->GetAABB();
-				for (int i = l; i < r; i++) {
-					aabbLeft.Union(shapes[i]->GetAABB());
-					leftS.push_back(aabbLeft.Area());
-				}
+			//	//compute the left node cost of all split method
+			//	vector<float> leftS;
+			//	aabb aabbLeft = shapes[l]->GetAABB();
+			//	for (int i = l; i < r; i++) {
+			//		aabbLeft.Union(shapes[i]->GetAABB());
+			//		leftS.push_back(aabbLeft.Area());
+			//	}
 
-				//compute the right node cost of all split method
-				vector<float> rightS;
-				aabb aabbRight = shapes[r]->GetAABB();
-				for (int i = r; i > l; i--) {
-					aabbRight.Union(shapes[i]->GetAABB());
-					rightS.push_back(aabbRight.Area());
-				}
+			//	//compute the right node cost of all split method
+			//	vector<float> rightS;
+			//	aabb aabbRight = shapes[r]->GetAABB();
+			//	for (int i = r; i > l; i--) {
+			//		aabbRight.Union(shapes[i]->GetAABB());
+			//		rightS.push_back(aabbRight.Area());
+			//	}
 
-				//compare the cost of all split methods
-				for (int i = 0; i < r - l; i++) {
-					float leftCost = leftS[i] * (i + 1);
-					float rightCost = rightS[r - l - i] * (r - l - i);
+			//	//compare the cost of all split methods
+			//	for (int i = l; i < r; i++) {
+			//		float leftCost = leftS[i - l] * (i - l + 1);
+			//		float rightCost = rightS[r - i - 1] * (r - i);
 
-					float totalCost = leftCost + rightCost;
-					if (totalCost < Cost) {
-						Cost = totalCost;
-						Axis = axis;
-						Split = l + i;
-					}
-				}
-			}
+			//		float totalCost = leftCost + rightCost;
+			//		if (totalCost < Cost) {
+			//			Cost = totalCost;
+			//			Axis = axis;
+			//			Split = i;
+			//		}
+			//	}	
+			//}
 
 			Axis = nodes[idx].aabb.LongestAxis();
 
@@ -682,7 +623,7 @@ namespace Tmpl8 {
 			
 			//mat4 M1base = mat4::Translate(float3(0, 14.5f, 2));
 			//mat4 M1 = M1base * mat4::RotateZ(sinf(animTime * 0.6f) * 0.1f) * mat4::Translate(float3(0, -0.9, 0));
-			//quad.T = M1, quad.invT = M1.FastInvertedTransformNoScale();
+			//plane[0].T = M1, plane[0].invT = M1.FastInvertedTransformNoScale();
 
 			//// cube animation: spin
 			//mat4 M2base = mat4::RotateX(PI / 4) * mat4::RotateZ(PI / 4);
@@ -693,10 +634,10 @@ namespace Tmpl8 {
 			//float tm = 1 - sqrf(fmodf(animTime, 2.0f) - 1);
 			//sphere.center = float3(-10.0f, -0.5f + tm, 2);
 
-			mat4 M1base = mat4::Translate(float3(0, 5.0f, 0));
+			mat4 M1base = mat4::Translate(float3(0, 4.0f, 0));
 			mat4 M1 = M1base * mat4::Translate(float3(0, -0.9, 0));
 			
-			quad.T = M1, quad.invT = M1.FastInvertedTransformNoScale();
+			plane[0].T = M1, plane[0].invT = M1.FastInvertedTransformNoScale();
 
 			mat4 M2 = mat4::Translate(float3(2.4f, 0, 2));
 			cube.T = M2, cube.invT = M2.FastInvertedTransformNoScale();
@@ -707,7 +648,7 @@ namespace Tmpl8 {
 		float3 GetLightPos() const
 		{
 			// light point position is the middle of the swinging quad
-			return quad.GetCenter() - float3(0, 0.01f, 0);
+			return plane[0].GetCenter() - float3(0, 0.01f, 0);
 		}
 		float3 GetLightColor(int objIdx) const
 		{
@@ -763,11 +704,10 @@ namespace Tmpl8 {
 
 		__declspec(align(64)) // start a new cacheline here
 			float animTime = 0;
-		Quad quad;
+		Plane plane[7];
 		Sphere sphere;
 		Sphere sphere2;
 		Cube cube;
-		//Plane plane[6];
 		TriangleMesh mesh;
 
 		vector<Shape*> shapes;

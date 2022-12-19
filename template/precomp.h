@@ -11,7 +11,6 @@
 #include <algorithm>
 #include <assert.h>
 #include <chrono>
-#include <CL/cl.h>
 #include <fstream>
 #include <io.h>
 #include <list>

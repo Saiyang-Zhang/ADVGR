@@ -28,5 +28,6 @@
     <None Include="template\LICENSE">
       <Filter>template</Filter>
     </None>
+    <None Include="BVH.cl" />
   </ItemGroup>
 </Project>
