@@ -459,20 +459,20 @@ namespace Tmpl8 {
 			Material light = Material(float3(1, 1, 1), float3(0), Light);
 			Material mirror = Material(float3(1, 1, 1), float3(0), Mirror);
 
-			mat4 leftT = mat4::Translate(float3(-4, 3, 0)) * mat4::RotateZ(PI / 2);
-			mat4 rightT = mat4::Translate(float3(4, 3, 0)) * mat4::RotateZ(-PI / 2);
-			mat4 topT = mat4::Translate(float3(0, 7, 0));
-			mat4 botT = mat4::Translate(float3(0, -1, 0)) * mat4::RotateZ(PI);
-			mat4 frontT = mat4::Translate(float3(0, 3, -4)) * mat4::RotateX(PI / 2);
-			mat4 backT = mat4::Translate(float3(0, 3, 4)) * mat4::RotateX(-PI / 2);;
+			mat4 leftT = mat4::Translate(float3(-7, 3, 0)) * mat4::RotateZ(PI / 2);
+			mat4 rightT = mat4::Translate(float3(7, 3, 0)) * mat4::RotateZ(-PI / 2);
+			mat4 topT = mat4::Translate(float3(0, 10, 0));
+			mat4 botT = mat4::Translate(float3(0, -2, 0)) * mat4::RotateZ(PI);
+			mat4 frontT = mat4::Translate(float3(0, 3, -7)) * mat4::RotateX(PI / 2);
+			mat4 backT = mat4::Translate(float3(0, 3, 7)) * mat4::RotateX(-PI / 2);;
 
 			plane[0] = Plane(0, float3(0), 2, light, mat4::Identity());						// light source
-			plane[1] = Plane(1, float3(0), 10, red, leftT);									// left wall
-			plane[2] = Plane(2, float3(0), 10, blue, rightT);								// right wall
-			plane[3] = Plane(3, float3(0), 10, white, botT);								// floor
-			plane[4] = Plane(4, float3(0), 10, white, topT);								// ceiling
-			plane[5] = Plane(5, float3(0), 10, green, frontT);								// front wall
-			plane[6] = Plane(6, float3(0), 10, white, backT);								// back wall
+			plane[1] = Plane(1, float3(0), 15, red, leftT);									// left wall
+			plane[2] = Plane(2, float3(0), 15, blue, rightT);								// right wall
+			plane[3] = Plane(3, float3(0), 15, white, botT);								// floor
+			plane[4] = Plane(4, float3(0), 15, white, topT);								// ceiling
+			plane[5] = Plane(5, float3(0), 15, green, frontT);								// front wall
+			plane[6] = Plane(6, float3(0), 15, white, backT);								// back wall
 			sphere = Sphere(6, float3(0), 0.5f, yellow);									// yellow mirror sphere
 			cube = Cube(8, float3(0), float3(1.15f), purple, mat4::Identity());				// purple glass cube
 			
@@ -496,21 +496,19 @@ namespace Tmpl8 {
 			for (int i = 0; i < shapes.size(); i++) {
 				shapes[i]->objIdx = i;
 			}
-
-			//for (int i = 0; i < nodes.size(); i++) {
-			//	printf("node: %d, c3: %d, c4: %d\n", i, nodes[i].c3, nodes[i].c4);
-			//}
 		}
 
 		int BuildBVH(int l, int r, int n) {
 			//no nodes 
-			if (l > r) return 0;
+			if (l > r) return -1;
 
 			//generate newest node
 			int idx = nodes.size();
 			nodes.push_back(BVHNode());
 			nodes[idx].c1 = -1;
 			nodes[idx].c2 = -1;
+			nodes[idx].c3 = -1;
+			nodes[idx].c4 = -1;
 			nodes[idx].n = -1;
 			nodes[idx].index = -1;
 
@@ -543,13 +541,15 @@ namespace Tmpl8 {
 
 		int BuildBVH_SAH(int l, int r, int n) {
 			//no nodes 
-			if (l > r) return 0;
+			if (l > r) return -1;
 
 			//generate newest node
 			int idx = nodes.size();
 			nodes.push_back(BVHNode());
 			nodes[idx].c1 = -1;
 			nodes[idx].c2 = -1;
+			nodes[idx].c3 = -1;
+			nodes[idx].c4 = -1;
 			nodes[idx].n = -1;
 			nodes[idx].index = -1;
 			nodes[idx].aabb = aabb(float3(INF), float3(-INF));
@@ -573,6 +573,11 @@ namespace Tmpl8 {
 			//Get the optimal split position
 			int Split;
 
+			vector<float> leftS;
+			aabb aabbLeft;
+			vector<float> rightS;
+			aabb aabbRight;
+
 			//For each axis, find the optimal position
 			for (int axis = 0; axis < 3; axis++) {
 				if (axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
@@ -585,16 +590,16 @@ namespace Tmpl8 {
 				float cost = INF;
 
 				//Compute the left node surface area when the split position is different
-				vector<float> leftS;
-				aabb aabbLeft;
+				vector<float>().swap(leftS);
+				aabbLeft = aabb(float3(INF), float3(-INF));
 				for (int i = l; i < r; i++) {
 					aabbLeft = aabbLeft.Union(this->shapes[i]->GetAABB());
 					leftS.push_back(aabbLeft.Area());
 				}
 
 				//Compute the right node surface area when the split position is different
-				vector<float> rightS;
-				aabb aabbRight;
+				vector<float>().swap(rightS);
+				aabbRight = aabb(float3(INF), float3(-INF));
 				for (int i = r; i > l; i--) {
 					aabbRight = aabbRight.Union(this->shapes[i]->GetAABB());
 					rightS.push_back(aabbRight.Area());
@@ -604,7 +609,7 @@ namespace Tmpl8 {
 				float totalCost;
 				for (int i = 0; i < r - l; i++) {
 					int leftCount = i + 1;
-					int rightCount = r - l - leftCount;
+					int rightCount = r - l - i;
 
 					float leftCost = leftCount * leftS[i];
 					float rightCost = rightCount * rightS[r - l - i - 1];
@@ -612,7 +617,7 @@ namespace Tmpl8 {
 					totalCost = leftCost + rightCost;
 					if (totalCost < cost) {
 						cost = totalCost;
-						split = i + l;
+						split = l + i;
 					}
 				}
 
@@ -637,16 +642,22 @@ namespace Tmpl8 {
 
 		int BuildQBVH(int l, int r, int n) {
 			//no nodes 
-			if (l > r) return 0;
+			if (l > r) return -1;
 
 			//generate newest node
 			int idx = nodes.size();
 			nodes.push_back(BVHNode());
+			nodes[idx].c1 = -1;
+			nodes[idx].c2 = -1;
+			nodes[idx].c3= -1;
+			nodes[idx].c4 = -1;
+			nodes[idx].n = -1;
+			nodes[idx].index = -1;
 			nodes[idx].aabb = aabb(float3(INF), float3(-INF));
 
 			//update node boundary
 			for (int i = l; i <= r; i++) {
-				nodes[idx].aabb = nodes[idx].aabb.Union(this->shapes[i]->GetAABB());
+				nodes[idx].aabb = nodes[idx].aabb.Union(shapes[i]->GetAABB());
 			}
 
 			//if less than n shapes in this node, then this is a leaf node
@@ -664,6 +675,11 @@ namespace Tmpl8 {
 			int lLocal = l;
 			int rLocal = r;
 
+			vector<float> leftS;
+			aabb aabbLeft;
+			vector<float> rightS;
+			aabb aabbRight;
+
 			for (int axis = 0; axis < 3; axis++) {
 				if (axis == 0) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpx);
 				if (axis == 1) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpy);
@@ -675,16 +691,16 @@ namespace Tmpl8 {
 				float cost = INF;
 
 				//Compute the left node surface area when the split position is different
-				vector<float> leftS;
-				aabb aabbLeft;
+				vector<float>().swap(leftS);
+				aabbLeft = aabb(float3(INF), float3(-INF));
 				for (int i = lLocal; i < rLocal; i++) {
 					aabbLeft = aabbLeft.Union(this->shapes[i]->GetAABB());
 					leftS.push_back(aabbLeft.Area());
 				}
 
 				//Compute the right node surface area when the split position is different
-				vector<float> rightS;
-				aabb aabbRight;
+				vector<float>().swap(rightS);
+				aabbRight = aabb(float3(INF), float3(-INF));
 				for (int i = rLocal; i > lLocal; i--) {
 					aabbRight = aabbRight.Union(this->shapes[i]->GetAABB());
 					rightS.push_back(aabbRight.Area());
@@ -694,7 +710,7 @@ namespace Tmpl8 {
 				float totalCost;
 				for (int i = 0; i < rLocal - lLocal; i++) {
 					int leftCount = i + 1;
-					int rightCount = rLocal - lLocal - leftCount;
+					int rightCount = rLocal - lLocal - i;
 
 					float leftCost = leftCount * leftS[i];
 					float rightCost = rightCount * rightS[rLocal - lLocal - i - 1];
@@ -722,6 +738,7 @@ namespace Tmpl8 {
 			lLocal = l;
 			rLocal = Middle;
 			Cost = INF;
+			MidLeft = l;
 
 			for (int axis = 0; axis < 3; axis++) {
 				if (axis == 0) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpx);
@@ -734,16 +751,16 @@ namespace Tmpl8 {
 				float cost = INF;
 
 				//Compute the left node surface area when the split position is different
-				vector<float> leftS;
-				aabb aabbLeft;
+				vector<float>().swap(leftS);
+				aabbLeft = aabb(float3(INF), float3(-INF));
 				for (int i = lLocal; i < rLocal; i++) {
 					aabbLeft = aabbLeft.Union(this->shapes[i]->GetAABB());
 					leftS.push_back(aabbLeft.Area());
 				}
 
 				//Compute the right node surface area when the split position is different
-				vector<float> rightS;
-				aabb aabbRight;
+				vector<float>().swap(rightS);
+				aabbRight = aabb(float3(INF), float3(-INF));
 				for (int i = rLocal; i > lLocal; i--) {
 					aabbRight = aabbRight.Union(this->shapes[i]->GetAABB());
 					rightS.push_back(aabbRight.Area());
@@ -753,7 +770,7 @@ namespace Tmpl8 {
 				float totalCost;
 				for (int i = 0; i < rLocal - lLocal; i++) {
 					int leftCount = i + 1;
-					int rightCount = rLocal - lLocal - leftCount;
+					int rightCount = rLocal - lLocal - i;
 
 					float leftCost = leftCount * leftS[i];
 					float rightCost = rightCount * rightS[rLocal - lLocal - i - 1];
@@ -778,14 +795,10 @@ namespace Tmpl8 {
 			if (Axis == 1) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpy);
 			if (Axis == 2) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpz);
 
-			nodes[idx].c1 = BuildBVH_SAH(lLocal, MidLeft, n);
-			nodes[idx].c2 = BuildBVH_SAH(MidLeft + 1, rLocal, n);
-
 			lLocal = Middle + 1;
 			rLocal = r;
 			Cost = INF;
-
-			if (rLocal > lLocal) return idx;
+			MidRight = r - 1;
 
 			for (int axis = 0; axis < 3; axis++) {
 				if (axis == 0) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpx);
@@ -798,16 +811,16 @@ namespace Tmpl8 {
 				float cost = INF;
 
 				//Compute the left node surface area when the split position is different
-				vector<float> leftS;
-				aabb aabbLeft;
+				vector<float>().swap(leftS);
+				aabbLeft = aabb(float3(INF), float3(-INF));
 				for (int i = lLocal; i < rLocal; i++) {
 					aabbLeft = aabbLeft.Union(this->shapes[i]->GetAABB());
 					leftS.push_back(aabbLeft.Area());
 				}
 
 				//Compute the right node surface area when the split position is different
-				vector<float> rightS;
-				aabb aabbRight;
+				vector<float>().swap(rightS);
+				aabbRight = aabb(float3(INF), float3(-INF));
 				for (int i = rLocal; i > lLocal; i--) {
 					aabbRight = aabbRight.Union(this->shapes[i]->GetAABB());
 					rightS.push_back(aabbRight.Area());
@@ -817,7 +830,7 @@ namespace Tmpl8 {
 				float totalCost;
 				for (int i = 0; i < rLocal - lLocal; i++) {
 					int leftCount = i + 1;
-					int rightCount = rLocal - lLocal - leftCount;
+					int rightCount = rLocal - lLocal - i;
 
 					float leftCost = leftCount * leftS[i];
 					float rightCost = rightCount * rightS[rLocal - lLocal - i - 1];
@@ -842,27 +855,30 @@ namespace Tmpl8 {
 			if (Axis == 1) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpy);
 			if (Axis == 2) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpz);
 
-			nodes[idx].c3 = BuildBVH_SAH(lLocal, MidRight, n);
-			nodes[idx].c4 = BuildBVH_SAH(MidRight + 1, rLocal, n);
+			nodes[idx].c1 = BuildQBVH(l, MidLeft, n);
+			nodes[idx].c2 = BuildQBVH(MidLeft + 1, Middle, n);
+			nodes[idx].c3 = BuildQBVH(Middle + 1, MidRight, n);
+			nodes[idx].c4 = BuildQBVH(MidRight + 1, r, n);
 
 			return idx;
 		}
 
 		void IntersectBVH(Ray& ray, int nodeIdx) const
 		{
+			if (nodeIdx < 0) return;
 			BVHNode node = nodes[nodeIdx];
 			if (IntersectAABB(ray, node.aabb) == 1e30f) return;
 			if (node.n > 0)
 			{
-				for (uint i = 0; i < node.n; i++)
+				for (int i = 0; i < node.n; i++)
 					shapes[node.index + i]->Intersect(ray);
 			}
 			else
 			{
 				IntersectBVH(ray, node.c1);
 				IntersectBVH(ray, node.c2);
-				//IntersectBVH(ray, node.c3);
-				//IntersectBVH(ray, node.c4);
+				IntersectBVH(ray, node.c3);
+				IntersectBVH(ray, node.c4);
 			}
 		}
 
@@ -887,30 +903,30 @@ namespace Tmpl8 {
 			// default time for the scene is simply 0. Updating/ the time per frame 
 			// enables animation. Updating it per ray can be used for motion blur.
 			animTime = t;
-			// light source animation: swing
-			
-			//mat4 M1base = mat4::Translate(float3(0, 14.5f, 2));
+
+			//// light source animation: swing
+			//mat4 M1base = mat4::Translate(float3(0, 5.0f, 2));
 			//mat4 M1 = M1base * mat4::RotateZ(sinf(animTime * 0.6f) * 0.1f) * mat4::Translate(float3(0, -0.9, 0));
 			//plane[0].T = M1, plane[0].invT = M1.FastInvertedTransformNoScale();
 
 			//// cube animation: spin
 			//mat4 M2base = mat4::RotateX(PI / 4) * mat4::RotateZ(PI / 4);
-			//mat4 M2 = mat4::Translate(float3(10.0f, 0, 2)) * mat4::RotateY(animTime * 0.5f) * M2base;
+			//mat4 M2 = mat4::Translate(float3(2.0f, 0, 2)) * mat4::RotateY(animTime * 0.5f) * M2base;
 			//cube.T = M2, cube.invT = M2.FastInvertedTransformNoScale();
 
 			//// sphere animation: bounce
 			//float tm = 1 - sqrf(fmodf(animTime, 2.0f) - 1);
-			//sphere.center = float3(-10.0f, -0.5f + tm, 2);
+			//sphere.center = float3(-2.0f, -0.5f + tm, 2);
 
-			mat4 M1base = mat4::Translate(float3(0, 4.0f, 0));
+			mat4 M1base = mat4::Translate(float3(0, 5.0f, 0));
 			mat4 M1 = M1base * mat4::Translate(float3(0, -0.9, 0));
 			
 			plane[0].T = M1, plane[0].invT = M1.FastInvertedTransformNoScale();
 
-			mat4 M2 = mat4::Translate(float3(2.4f, 0, 2));
+			mat4 M2 = mat4::Translate(float3(2.0f, 0, 2));
 			cube.T = M2, cube.invT = M2.FastInvertedTransformNoScale();
 	
-			sphere.center = float3(-2.4f, 0.2, 2);
+			sphere.center = float3(-2.0f, 0.2, 2);
 		
 		}
 		float3 GetLightPos() const
