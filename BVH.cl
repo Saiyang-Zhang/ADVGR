@@ -1,6 +1,6 @@
 #include <template/common.h>
 
-__kernel void BVHcl(
+__kernel void IntersectBVHcl(
 )
 {
 

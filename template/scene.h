@@ -255,23 +255,24 @@ namespace Tmpl8 {
 		}
 		aabb GetAABB() const
 		{
-			float3 b0 = TransformPosition(b[0], invT);
-			float3 b1 = TransformPosition(b[1], invT);
-			return aabb(b0, b1);
+			float3 b0 = TransformPosition(b[0], T);
+			float3 b1 = TransformPosition(b[1], T);
+			return aabb(fminf(b0, b1), fmaxf(b0, b1));
 		}
 		float3 b[2];
 	};
 
 	// -----------------------------------------------------------
 	// Plane Shape
-	// Oriented quad, intended to be used as a light source.
+	// Oriented plane.
 	// -----------------------------------------------------------
 	class Plane : public Shape
 	{
 	public:
 		Plane() = default;
-		Plane(int objIdx, float s, Material material, mat4 transform = mat4::Identity())
+		Plane(int objIdx, float3 pos, float s, Material material, mat4 transform = mat4::Identity())
 		{
+			this->center = pos;
 			this->objIdx = objIdx;
 			this->material = material;
 			this->T = transform, this->invT = transform.FastInvertedTransformNoScale();
@@ -295,15 +296,13 @@ namespace Tmpl8 {
 		}
 		float3 GetCenter() const
 		{
-			float3 corner1 = TransformPosition(float3(-0.5f, 0, -0.5f), T);
-			float3 corner2 = TransformPosition(float3(0.5f, 0, 0.5f), T);
-			return (corner1 + corner2) * 0.5f;
+			return TransformPosition(center, T);
 		}
 		aabb GetAABB() const
 		{
-			float3 corner1 = TransformPosition(float3(-0.5f, 0, -0.5f), T);
-			float3 corner2 = TransformPosition(float3(0.5f, 0, 0.5f), T);
-			return aabb(corner1, corner2);
+			float3 corner1 = TransformPosition(center + float3(- size, 0, -size), T);
+			float3 corner2 = TransformPosition(center + float3(size, 0, size), T);
+			return aabb(fminf(corner1, corner2), fmaxf(corner1, corner2));
 		}
 		float size;
 	};
@@ -425,15 +424,17 @@ namespace Tmpl8 {
 		aabb aabb;			//aabb
 	};
 
-	inline bool IntersectAABB(const Ray & ray, const float3 bmin, const float3 bmax)
+	inline float IntersectAABB(const Ray & ray, const aabb box)
 	{
-		float tx1 = (bmin.x - ray.O.x) / ray.D.x, tx2 = (bmax.x - ray.O.x) / ray.D.x;
+		float3 bmin = box.bmin3;
+		float3 bmax = box.bmax3;
+		float tx1 = (bmin.x - ray.O.x) * ray.rD.x, tx2 = (bmax.x - ray.O.x) * ray.rD.x;
 		float tmin = min(tx1, tx2), tmax = max(tx1, tx2);
-		float ty1 = (bmin.y - ray.O.y) / ray.D.y, ty2 = (bmax.y - ray.O.y) / ray.D.y;
+		float ty1 = (bmin.y - ray.O.y) * ray.rD.y, ty2 = (bmax.y - ray.O.y) * ray.rD.y;
 		tmin = max(tmin, min(ty1, ty2)), tmax = min(tmax, max(ty1, ty2));
-		float tz1 = (bmin.z - ray.O.z) / ray.D.z, tz2 = (bmax.z - ray.O.z) / ray.D.z;
+		float tz1 = (bmin.z - ray.O.z) * ray.rD.z, tz2 = (bmax.z - ray.O.z) * ray.rD.z;
 		tmin = max(tmin, min(tz1, tz2)), tmax = min(tmax, max(tz1, tz2));
-		return tmax >= tmin && tmin < ray.t && tmax > 0;
+		if (tmax >= tmin && tmin < ray.t && tmax > 0) return tmin; else return 1e30f;
 	}
 
 	// -----------------------------------------------------------
@@ -465,30 +466,30 @@ namespace Tmpl8 {
 			mat4 frontT = mat4::Translate(float3(0, 3, -4)) * mat4::RotateX(PI / 2);
 			mat4 backT = mat4::Translate(float3(0, 3, 4)) * mat4::RotateX(-PI / 2);;
 
-			plane[0] = Plane(0, 1, light, mat4::Identity());							// light source
-			plane[1] = Plane(1, 8, red, leftT);									// left wall
-			plane[2] = Plane(2, 8, blue, rightT);									// right wall
-			plane[3] = Plane(3, 8, white, botT);									// floor
-			plane[4] = Plane(4, 8, white, topT);									// ceiling
-			plane[5] = Plane(5, 8, green, frontT);									// front wall
-			plane[6] = Plane(6, 8, white, backT);									// back wall
-			sphere = Sphere(6, float3(0), 0.5f, yellow);								// bouncing ball
+			plane[0] = Plane(0, float3(0), 2, light, mat4::Identity());						// light source
+			plane[1] = Plane(1, float3(0), 10, red, leftT);									// left wall
+			plane[2] = Plane(2, float3(0), 10, blue, rightT);								// right wall
+			plane[3] = Plane(3, float3(0), 10, white, botT);								// floor
+			plane[4] = Plane(4, float3(0), 10, white, topT);								// ceiling
+			plane[5] = Plane(5, float3(0), 10, green, frontT);								// front wall
+			plane[6] = Plane(6, float3(0), 10, white, backT);								// back wall
+			sphere = Sphere(6, float3(0), 0.5f, yellow);									// bouncing ball
 			sphere2 = Sphere(6, float3(0), 8.0f, white);
-			cube = Cube(8, float3(0), float3(1.15f), purple, mat4::Identity());			// cube
+			cube = Cube(8, float3(0), float3(1.15f), purple, mat4::Identity());				// cube
 			
 			for (int i = 0; i < 7; i++) {
 				shapes.push_back(&plane[i]);
 			}
 
 			shapes.push_back(&sphere);
-			shapes.push_back(&sphere2);
+			//shapes.push_back(&sphere2);
 			shapes.push_back(&cube);
 
 			mesh = TriangleMesh(0, "assets/bunny.obj");
 
-			//for (int i = 0; i < mesh.triangles.size(); i++) {
-			//	shapes.push_back(&mesh.triangles[i]);
-			//}
+			for (int i = 0; i < mesh.triangles.size(); i++) {
+				shapes.push_back(&mesh.triangles[i]);
+			}
 
 			SetTime(0);
 
@@ -535,28 +536,28 @@ namespace Tmpl8 {
 			//	if (axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
 			//	if (axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
 			//	if (axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
-
+			//
 			//	//compute the left node cost of all split method
 			//	vector<float> leftS;
-			//	aabb aabbLeft = shapes[l]->GetAABB();
+			//	aabb aabbLeft = aabb(float3(INF), float3(-INF));
 			//	for (int i = l; i < r; i++) {
 			//		aabbLeft.Union(shapes[i]->GetAABB());
 			//		leftS.push_back(aabbLeft.Area());
 			//	}
-
+			//
 			//	//compute the right node cost of all split method
 			//	vector<float> rightS;
-			//	aabb aabbRight = shapes[r]->GetAABB();
+			//	aabb aabbRight = aabb(float3(INF), float3(-INF));
 			//	for (int i = r; i > l; i--) {
 			//		aabbRight.Union(shapes[i]->GetAABB());
 			//		rightS.push_back(aabbRight.Area());
 			//	}
-
+			//
 			//	//compare the cost of all split methods
 			//	for (int i = l; i < r; i++) {
 			//		float leftCost = leftS[i - l] * (i - l + 1);
 			//		float rightCost = rightS[r - i - 1] * (r - i);
-
+			//
 			//		float totalCost = leftCost + rightCost;
 			//		if (totalCost < Cost) {
 			//			Cost = totalCost;
@@ -579,13 +580,52 @@ namespace Tmpl8 {
 
 			return idx;
 		}
-		
+
+		//non-recursive intersection
+		//void IntersectBVH(Ray& ray) const
+		//{
+		//	int* stack = (int*)malloc(nodes.size() * sizeof(int));
+		//	int sp = 0;
+		//	
+		//	stack[sp++] = root;
+		//	while (sp > 0) {
+		//		BVHNode node = nodes[stack[--sp]];
+
+		//		if (node.n > 0) {
+		//			for (int i = 0; i < node.n; i++) {
+		//				shapes[i + node.index]->Intersect(ray);
+		//			}
+		//			continue;
+		//		}
+		//		else {
+		//			float d1 = IntersectAABB(ray, nodes[node.left].aabb);
+		//			float d2 = IntersectAABB(ray, nodes[node.right].aabb);
+
+		//			if (d1 != 1e30f && d2 != 1e30f) {
+		//				if (d1 < d2) { 
+		//					stack[sp++] = node.right;
+		//					stack[sp++] = node.left;
+		//				}
+		//				else { 
+		//					stack[sp++] = node.left;
+		//					stack[sp++] = node.right;
+		//				}
+		//			}
+		//			else if (d1 == 1e30f) {
+		//				stack[sp++] = node.right;
+		//			}
+		//			else if (d2 == 1e30f) {
+		//				stack[sp++] = node.left;
+		//			}
+		//			continue;
+		//		}
+		//	}
+		//}
+
 		void IntersectBVH(Ray& ray, int nodeIdx) const
 		{
 			BVHNode node = nodes[nodeIdx];
-			float3 aabbMin = float3(node.aabb.Minimum(0), node.aabb.Minimum(1), node.aabb.Minimum(2));
-			float3 aabbMax = float3(node.aabb.Maximum(0), node.aabb.Maximum(1), node.aabb.Maximum(2));
-			if (!IntersectAABB(ray, aabbMin, aabbMax)) return;
+			if (IntersectAABB(ray, node.aabb) == 1e30f) return;
 			if (node.n > 0)
 			{
 				for (uint i = 0; i < node.n; i++)

@@ -14,7 +14,7 @@ void Renderer::Init()
 
 	Kernel::InitCL();
 
-	Kernel kernel = Kernel("BVH.cl", "BVHcl");
+	Kernel kernel = Kernel("BVH.cl", "IntersectBVHcl");
 	
 }
 
@@ -270,7 +270,6 @@ void Renderer::Tick(float deltaTime)
 //			screen->pixels[dest + x] =
 //			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
 //	}
-////Each time you run this, 
 //	sample++;
 	
 	// in game control
