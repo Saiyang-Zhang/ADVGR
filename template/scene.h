@@ -419,7 +419,7 @@ namespace Tmpl8 {
 	}
 
 	struct BVHNode {
-		int left, right;	//index of left and right child
+		int c1, c2, c3, c4;	//index of children
 		int n, index;		//n children in leaf node, index is idex of the first shape                     
 		aabb aabb;			//aabb
 	};
@@ -493,22 +493,22 @@ namespace Tmpl8 {
 
 			SetTime(0);
 
-		 	root = BuildBVH_SAH(0, shapes.size()-1, 2);
+		 	root = BuildQBVH(0, shapes.size()-1, 2);
 
 			for (int i = 0; i < shapes.size(); i++) {
 				shapes[i]->objIdx = i;
 			}
 		}
 
-		int BuildBVH_SAH(int l, int r, int n) {
+		int BuildBVH(int l, int r, int n) {
 			//no nodes 
 			if (l > r) return 0;
 
 			//generate newest node
 			int idx = nodes.size();
 			nodes.push_back(BVHNode());
-			nodes[idx].left = -1;
-			nodes[idx].right = -1;
+			nodes[idx].c1 = -1;
+			nodes[idx].c2 = -1;
 			nodes[idx].n = -1;
 			nodes[idx].index = -1;
 
@@ -526,101 +526,185 @@ namespace Tmpl8 {
 				return idx;
 			}
 
-			//using surface area heuristic
-			float Cost = INF;						//cost of the current split method
-			int Axis = 0;							//axis of the current split method
-			int Split;
-
-			////compute the least cost in each axis
-			//for (int axis = 0; axis < 3; axis++) {
-			//	if (axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
-			//	if (axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
-			//	if (axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
-			//
-			//	//compute the left node cost of all split method
-			//	vector<float> leftS;
-			//	aabb aabbLeft = aabb(float3(INF), float3(-INF));
-			//	for (int i = l; i < r; i++) {
-			//		aabbLeft.Union(shapes[i]->GetAABB());
-			//		leftS.push_back(aabbLeft.Area());
-			//	}
-			//
-			//	//compute the right node cost of all split method
-			//	vector<float> rightS;
-			//	aabb aabbRight = aabb(float3(INF), float3(-INF));
-			//	for (int i = r; i > l; i--) {
-			//		aabbRight.Union(shapes[i]->GetAABB());
-			//		rightS.push_back(aabbRight.Area());
-			//	}
-			//
-			//	//compare the cost of all split methods
-			//	for (int i = l; i < r; i++) {
-			//		float leftCost = leftS[i - l] * (i - l + 1);
-			//		float rightCost = rightS[r - i - 1] * (r - i);
-			//
-			//		float totalCost = leftCost + rightCost;
-			//		if (totalCost < Cost) {
-			//			Cost = totalCost;
-			//			Axis = axis;
-			//			Split = i;
-			//		}
-			//	}	
-			//}
-
-			Axis = nodes[idx].aabb.LongestAxis();
-
-			Split = (l + r) / 2;
+			int Axis = nodes[idx].aabb.LongestAxis();	//axis of the current split method
+			int Split = (l + r) / 2;
 
 			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
 			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
 			if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
 
-			nodes[idx].left = BuildBVH_SAH(l, Split, n);
-			nodes[idx].right = BuildBVH_SAH(Split + 1, r, n);
+			nodes[idx].c1 = BuildBVH(l, Split, n);
+			nodes[idx].c2 = BuildBVH(Split + 1, r, n);
 
 			return idx;
 		}
 
-		//non-recursive intersection
-		//void IntersectBVH(Ray& ray) const
-		//{
-		//	int* stack = (int*)malloc(nodes.size() * sizeof(int));
-		//	int sp = 0;
-		//	
-		//	stack[sp++] = root;
-		//	while (sp > 0) {
-		//		BVHNode node = nodes[stack[--sp]];
+		int BuildBVH_SAH(int l, int r, int n) {
+			//no nodes 
+			if (l > r) return 0;
 
-		//		if (node.n > 0) {
-		//			for (int i = 0; i < node.n; i++) {
-		//				shapes[i + node.index]->Intersect(ray);
-		//			}
-		//			continue;
-		//		}
-		//		else {
-		//			float d1 = IntersectAABB(ray, nodes[node.left].aabb);
-		//			float d2 = IntersectAABB(ray, nodes[node.right].aabb);
+			//generate newest node
+			int idx = nodes.size();
+			nodes.push_back(BVHNode());
+			nodes[idx].c1 = -1;
+			nodes[idx].c2 = -1;
+			nodes[idx].n = -1;
+			nodes[idx].index = -1;
+			nodes[idx].aabb = aabb(float3(INF), float3(-INF));
 
-		//			if (d1 != 1e30f && d2 != 1e30f) {
-		//				if (d1 < d2) { 
-		//					stack[sp++] = node.right;
-		//					stack[sp++] = node.left;
-		//				}
-		//				else { 
-		//					stack[sp++] = node.left;
-		//					stack[sp++] = node.right;
-		//				}
-		//			}
-		//			else if (d1 == 1e30f) {
-		//				stack[sp++] = node.right;
-		//			}
-		//			else if (d2 == 1e30f) {
-		//				stack[sp++] = node.left;
-		//			}
-		//			continue;
-		//		}
-		//	}
-		//}
+			//update node boundary
+			for (int i = l; i <= r; i++) {
+				nodes[idx].aabb = nodes[idx].aabb.Union(this->shapes[i]->GetAABB());
+			}
+
+			//if less than n shapes in this node, then this is a leaf node
+			if ((r - l + 1) <= n) {
+				nodes[idx].n = r - l + 1;
+				nodes[idx].index = l;
+				return idx;
+			}
+
+			//Get the optimal split axis
+			int Axis;
+			//Get the least cost, skip the computation involving the current node
+			float Cost = INF;
+			//Get the optimal split position
+			int Split;
+
+			//For each axis, find the optimal position
+			for (int axis = 0; axis < 3; axis++) {
+				if (axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
+				if (axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
+				if (axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
+
+				//Get the optimal split position along this axis
+				int split;
+				//Get the least cost along this axis
+				float cost = INF;
+
+				//Compute the left node surface area when the split position is different
+				vector<float> leftS;
+				aabb aabbLeft;
+				for (int i = l; i < r; i++) {
+					aabbLeft = aabbLeft.Union(this->shapes[i]->GetAABB());
+					leftS.push_back(aabbLeft.Area());
+				}
+
+				//Compute the right node surface area when the split position is different
+				vector<float> rightS;
+				aabb aabbRight;
+				for (int i = r; i > l; i--) {
+					aabbRight = aabbRight.Union(this->shapes[i]->GetAABB());
+					rightS.push_back(aabbRight.Area());
+				}
+				
+				//Compute the total cost when the split position is different
+				float totalCost;
+				for (int i = 0; i < r - l; i++) {
+					int leftCount = i + 1;
+					int rightCount = r - l - leftCount;
+
+					float leftCost = leftCount * leftS[i];
+					float rightCost = rightCount * rightS[r - l - i - 1];
+
+					totalCost = leftCost + rightCost;
+					if (totalCost < cost) {
+						cost = totalCost;
+						split = i + l;
+					}
+				}
+
+				//If the cost when split along the current axis at the local optimal split
+				//position is better, update the information
+				if (cost < Cost) {
+					Axis = axis;
+					Cost = cost;
+					Split = split;
+				}
+			}
+
+			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
+			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
+			if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
+
+			nodes[idx].c1 = BuildBVH_SAH(l, Split, n);
+			nodes[idx].c2 = BuildBVH_SAH(Split + 1, r, n);
+
+			return idx;
+		}
+
+		int BuildQBVH(int l, int r, int n) {
+			//no nodes 
+			if (l > r) return 0;
+
+			//generate newest node
+			int idx = nodes.size();
+			nodes.push_back(BVHNode());
+			nodes[idx].c1 = -1;
+			nodes[idx].c2 = -1;
+			nodes[idx].c3 = -1;
+			nodes[idx].c4 = -1;
+			nodes[idx].n = -1;
+			nodes[idx].index = -1;
+
+			nodes[idx].aabb = aabb(float3(INF), float3(-INF));
+
+			//update node boundary
+			for (int i = l; i <= r; i++) {
+				nodes[idx].aabb = nodes[idx].aabb.Union(this->shapes[i]->GetAABB());
+			}
+
+			//if less than n shapes in this node, then this is a leaf node
+			if ((r - l + 1) <= n) {
+				nodes[idx].n = r - l + 1;
+				nodes[idx].index = l;
+				return idx;
+			}
+			
+			//axis of the current split method
+			int Axis = 0;							
+			int middle, midLeft, midRight;
+
+			Axis = nodes[idx].aabb.LongestAxis();
+
+			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
+			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
+			if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
+			
+			middle = (l + r) / 2;
+
+			aabb aabbLeft = aabb(float3(INF), float3(-INF));
+			for (int i = l; i <= middle; i++)
+				aabbLeft = aabbLeft.Union(this->shapes[i]->GetAABB());
+
+			Axis = aabbLeft.LongestAxis();
+
+			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + middle + 1, cmpx);
+			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + middle + 1, cmpy);
+			if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + middle + 1, cmpz);
+
+			midLeft = (l + middle) / 2;
+
+			nodes[idx].c1 = BuildQBVH(l, midLeft, n);
+			nodes[idx].c2 = BuildQBVH(midLeft + 1, middle, n);
+
+			aabb aabbRight = aabb(float3(INF), float3(-INF));
+			for (int i = middle + 1; i <= r; i++)
+				aabbRight = aabbRight.Union(this->shapes[i]->GetAABB());
+
+			Axis = aabbRight.LongestAxis();
+
+			if (Axis == 0) sort(&shapes[0] + middle + 1, &shapes[0] + r + 1, cmpx);
+			if (Axis == 1) sort(&shapes[0] + middle + 1, &shapes[0] + r + 1, cmpy);
+			if (Axis == 2) sort(&shapes[0] + middle + 1, &shapes[0] + r + 1, cmpz);
+
+			midRight = (middle + 1 + r) / 2;
+
+			nodes[idx].c3 = BuildQBVH(middle + 1, midRight, n);
+			nodes[idx].c4 = BuildQBVH(midRight + 1, r, n);
+
+			return idx;
+		}
 
 		void IntersectBVH(Ray& ray, int nodeIdx) const
 		{
@@ -633,8 +717,10 @@ namespace Tmpl8 {
 			}
 			else
 			{
-				IntersectBVH(ray, node.left);
-				IntersectBVH(ray, node.right);
+				IntersectBVH(ray, node.c1);
+				IntersectBVH(ray, node.c2);
+				IntersectBVH(ray, node.c3);
+				IntersectBVH(ray, node.c4);
 			}
 		}
 
