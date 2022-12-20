@@ -473,16 +473,14 @@ namespace Tmpl8 {
 			plane[4] = Plane(4, float3(0), 10, white, topT);								// ceiling
 			plane[5] = Plane(5, float3(0), 10, green, frontT);								// front wall
 			plane[6] = Plane(6, float3(0), 10, white, backT);								// back wall
-			sphere = Sphere(6, float3(0), 0.5f, yellow);									// bouncing ball
-			sphere2 = Sphere(6, float3(0), 8.0f, white);
-			cube = Cube(8, float3(0), float3(1.15f), purple, mat4::Identity());				// cube
+			sphere = Sphere(6, float3(0), 0.5f, yellow);									// yellow mirror sphere
+			cube = Cube(8, float3(0), float3(1.15f), purple, mat4::Identity());				// purple glass cube
 			
 			for (int i = 0; i < 7; i++) {
 				shapes.push_back(&plane[i]);
 			}
 
 			shapes.push_back(&sphere);
-			//shapes.push_back(&sphere2);
 			shapes.push_back(&cube);
 
 			mesh = TriangleMesh(0, "assets/bunny.obj");
@@ -498,6 +496,10 @@ namespace Tmpl8 {
 			for (int i = 0; i < shapes.size(); i++) {
 				shapes[i]->objIdx = i;
 			}
+
+			//for (int i = 0; i < nodes.size(); i++) {
+			//	printf("node: %d, c3: %d, c4: %d\n", i, nodes[i].c3, nodes[i].c4);
+			//}
 		}
 
 		int BuildBVH(int l, int r, int n) {
@@ -640,13 +642,6 @@ namespace Tmpl8 {
 			//generate newest node
 			int idx = nodes.size();
 			nodes.push_back(BVHNode());
-			nodes[idx].c1 = -1;
-			nodes[idx].c2 = -1;
-			nodes[idx].c3 = -1;
-			nodes[idx].c4 = -1;
-			nodes[idx].n = -1;
-			nodes[idx].index = -1;
-
 			nodes[idx].aabb = aabb(float3(INF), float3(-INF));
 
 			//update node boundary
@@ -662,46 +657,193 @@ namespace Tmpl8 {
 			}
 			
 			//axis of the current split method
-			int Axis = 0;							
-			int middle, midLeft, midRight;
+			int Axis;							
+			int Middle, MidLeft, MidRight;
+			float Cost = INF;
 
-			Axis = nodes[idx].aabb.LongestAxis();
+			int lLocal = l;
+			int rLocal = r;
 
-			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
-			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
-			if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
-			
-			middle = (l + r) / 2;
+			for (int axis = 0; axis < 3; axis++) {
+				if (axis == 0) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpx);
+				if (axis == 1) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpy);
+				if (axis == 2) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpz);
 
-			aabb aabbLeft = aabb(float3(INF), float3(-INF));
-			for (int i = l; i <= middle; i++)
-				aabbLeft = aabbLeft.Union(this->shapes[i]->GetAABB());
+				//Get the optimal split position along this axis
+				int middle;
+				//Get the least cost along this axis
+				float cost = INF;
 
-			Axis = aabbLeft.LongestAxis();
+				//Compute the left node surface area when the split position is different
+				vector<float> leftS;
+				aabb aabbLeft;
+				for (int i = lLocal; i < rLocal; i++) {
+					aabbLeft = aabbLeft.Union(this->shapes[i]->GetAABB());
+					leftS.push_back(aabbLeft.Area());
+				}
 
-			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + middle + 1, cmpx);
-			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + middle + 1, cmpy);
-			if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + middle + 1, cmpz);
+				//Compute the right node surface area when the split position is different
+				vector<float> rightS;
+				aabb aabbRight;
+				for (int i = rLocal; i > lLocal; i--) {
+					aabbRight = aabbRight.Union(this->shapes[i]->GetAABB());
+					rightS.push_back(aabbRight.Area());
+				}
 
-			midLeft = (l + middle) / 2;
+				//Compute the total cost when the split position is different
+				float totalCost;
+				for (int i = 0; i < rLocal - lLocal; i++) {
+					int leftCount = i + 1;
+					int rightCount = rLocal - lLocal - leftCount;
 
-			nodes[idx].c1 = BuildQBVH(l, midLeft, n);
-			nodes[idx].c2 = BuildQBVH(midLeft + 1, middle, n);
+					float leftCost = leftCount * leftS[i];
+					float rightCost = rightCount * rightS[rLocal - lLocal - i - 1];
 
-			aabb aabbRight = aabb(float3(INF), float3(-INF));
-			for (int i = middle + 1; i <= r; i++)
-				aabbRight = aabbRight.Union(this->shapes[i]->GetAABB());
+					totalCost = leftCost + rightCost;
+					if (totalCost < cost) {
+						cost = totalCost;
+						middle = i + lLocal;
+					}
+				}
 
-			Axis = aabbRight.LongestAxis();
+				//If the cost when split along the current axis at the local optimal split
+				//position is better, update the information
+				if (cost < Cost) {
+					Axis = axis;
+					Cost = cost;
+					Middle = middle;
+				}
+			}
 
-			if (Axis == 0) sort(&shapes[0] + middle + 1, &shapes[0] + r + 1, cmpx);
-			if (Axis == 1) sort(&shapes[0] + middle + 1, &shapes[0] + r + 1, cmpy);
-			if (Axis == 2) sort(&shapes[0] + middle + 1, &shapes[0] + r + 1, cmpz);
+			if (Axis == 0) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpx);
+			if (Axis == 1) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpy);
+			if (Axis == 2) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpz);
 
-			midRight = (middle + 1 + r) / 2;
+			lLocal = l;
+			rLocal = Middle;
+			Cost = INF;
 
-			nodes[idx].c3 = BuildQBVH(middle + 1, midRight, n);
-			nodes[idx].c4 = BuildQBVH(midRight + 1, r, n);
+			for (int axis = 0; axis < 3; axis++) {
+				if (axis == 0) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpx);
+				if (axis == 1) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpy);
+				if (axis == 2) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpz);
+
+				//Get the optimal split position along this axis
+				int middle;
+				//Get the least cost along this axis
+				float cost = INF;
+
+				//Compute the left node surface area when the split position is different
+				vector<float> leftS;
+				aabb aabbLeft;
+				for (int i = lLocal; i < rLocal; i++) {
+					aabbLeft = aabbLeft.Union(this->shapes[i]->GetAABB());
+					leftS.push_back(aabbLeft.Area());
+				}
+
+				//Compute the right node surface area when the split position is different
+				vector<float> rightS;
+				aabb aabbRight;
+				for (int i = rLocal; i > lLocal; i--) {
+					aabbRight = aabbRight.Union(this->shapes[i]->GetAABB());
+					rightS.push_back(aabbRight.Area());
+				}
+
+				//Compute the total cost when the split position is different
+				float totalCost;
+				for (int i = 0; i < rLocal - lLocal; i++) {
+					int leftCount = i + 1;
+					int rightCount = rLocal - lLocal - leftCount;
+
+					float leftCost = leftCount * leftS[i];
+					float rightCost = rightCount * rightS[rLocal - lLocal - i - 1];
+
+					totalCost = leftCost + rightCost;
+					if (totalCost < cost) {
+						cost = totalCost;
+						middle = i + lLocal;
+					}
+				}
+
+				//If the cost when split along the current axis at the local optimal split
+				//position is better, update the information
+				if (cost < Cost) {
+					Axis = axis;
+					Cost = cost;
+					MidLeft = middle;
+				}
+			}
+
+			if (Axis == 0) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpx);
+			if (Axis == 1) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpy);
+			if (Axis == 2) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpz);
+
+			nodes[idx].c1 = BuildBVH_SAH(lLocal, MidLeft, n);
+			nodes[idx].c2 = BuildBVH_SAH(MidLeft + 1, rLocal, n);
+
+			lLocal = Middle + 1;
+			rLocal = r;
+			Cost = INF;
+
+			if (rLocal > lLocal) return idx;
+
+			for (int axis = 0; axis < 3; axis++) {
+				if (axis == 0) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpx);
+				if (axis == 1) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpy);
+				if (axis == 2) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpz);
+
+				//Get the optimal split position along this axis
+				int middle;
+				//Get the least cost along this axis
+				float cost = INF;
+
+				//Compute the left node surface area when the split position is different
+				vector<float> leftS;
+				aabb aabbLeft;
+				for (int i = lLocal; i < rLocal; i++) {
+					aabbLeft = aabbLeft.Union(this->shapes[i]->GetAABB());
+					leftS.push_back(aabbLeft.Area());
+				}
+
+				//Compute the right node surface area when the split position is different
+				vector<float> rightS;
+				aabb aabbRight;
+				for (int i = rLocal; i > lLocal; i--) {
+					aabbRight = aabbRight.Union(this->shapes[i]->GetAABB());
+					rightS.push_back(aabbRight.Area());
+				}
+
+				//Compute the total cost when the split position is different
+				float totalCost;
+				for (int i = 0; i < rLocal - lLocal; i++) {
+					int leftCount = i + 1;
+					int rightCount = rLocal - lLocal - leftCount;
+
+					float leftCost = leftCount * leftS[i];
+					float rightCost = rightCount * rightS[rLocal - lLocal - i - 1];
+
+					totalCost = leftCost + rightCost;
+					if (totalCost < cost) {
+						cost = totalCost;
+						middle = i + lLocal;
+					}
+				}
+
+				//If the cost when split along the current axis at the local optimal split
+				//position is better, update the information
+				if (cost < Cost) {
+					Axis = axis;
+					Cost = cost;
+					MidRight = middle;
+				}
+			}
+
+			if (Axis == 0) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpx);
+			if (Axis == 1) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpy);
+			if (Axis == 2) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpz);
+
+			nodes[idx].c3 = BuildBVH_SAH(lLocal, MidRight, n);
+			nodes[idx].c4 = BuildBVH_SAH(MidRight + 1, rLocal, n);
 
 			return idx;
 		}
@@ -719,8 +861,8 @@ namespace Tmpl8 {
 			{
 				IntersectBVH(ray, node.c1);
 				IntersectBVH(ray, node.c2);
-				IntersectBVH(ray, node.c3);
-				IntersectBVH(ray, node.c4);
+				//IntersectBVH(ray, node.c3);
+				//IntersectBVH(ray, node.c4);
 			}
 		}
 
@@ -778,12 +920,12 @@ namespace Tmpl8 {
 		}
 		float3 GetLightColor(int objIdx) const
 		{
-			if (objIdx == -1) return float3(0); // or perhaps we should just crash
+			if (objIdx == -1) return float3(0);
 			return shapes[objIdx]->material.color;
 		}
 		MatType GetObjMatType(int objIdx) const
 		{
-			if (objIdx == -1) return Basic; // or perhaps we should just crash
+			if (objIdx == -1) return Basic;
 			return shapes[objIdx]->material.type;
 		}
 		void FindNearest(Ray& ray) const
@@ -832,7 +974,6 @@ namespace Tmpl8 {
 			float animTime = 0;
 		Plane plane[7];
 		Sphere sphere;
-		Sphere sphere2;
 		Cube cube;
 		TriangleMesh mesh;
 
