@@ -219,7 +219,7 @@ float3 Renderer::PathTraceNew(Ray& ray, float iter = 0) {
 	if (mat == Mirror) {
 		float3 reflectRayDir = normalize(reflect(ray.D, N));
 		Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir);
-		return PathTrace(mirrorRay, iter++);
+		return PathTraceNew(mirrorRay, iter++);
 	}
 
 	if (mat == Glass) {
@@ -243,7 +243,7 @@ float3 Renderer::PathTraceNew(Ray& ray, float iter = 0) {
 			//reflect
 			float3 reflectRayDir = normalize(reflect(ray.D, N));
 			Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir);
-			return PathTrace(mirrorRay, iter++);
+			return PathTraceNew(mirrorRay, iter++);
 		}
 		else
 		{
@@ -256,7 +256,7 @@ float3 Renderer::PathTraceNew(Ray& ray, float iter = 0) {
 				float3 refractRayDir = normalize(-cos2 * N + refractive[AirToGlass] * (ray.D + cos1 * N));
 				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, Glass);
 
-				return PathTrace(refractRay, iter++);
+				return PathTraceNew(refractRay, iter++);
 			}
 			if (ray.media == Glass) {
 
@@ -265,7 +265,7 @@ float3 Renderer::PathTraceNew(Ray& ray, float iter = 0) {
 				float3 refractRayDir = normalize(-cos2 * N + refractive[GlassToAir] * (ray.D + cos1 * N));
 				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, 10000, Air);
 
-				return PathTrace(refractRay, iter++);
+				return PathTraceNew(refractRay, iter++);
 			}
 		}
 	}
