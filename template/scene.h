@@ -62,10 +62,9 @@ namespace Tmpl8 {
 	class Material {
 	public:
 		Material() = default;
-		Material(float3 color, float3 albedo, MatType type) : 
-		color(color), albedo(albedo), type(type) {}
+		Material(float3 albedo, MatType type) : 
+		albedo(albedo), type(type) {}
 
-		float3 color;
 		float3 albedo;
 		MatType type;
 	};
@@ -383,7 +382,7 @@ namespace Tmpl8 {
 
 			int faceIdx = 0;
 
-			material = Material(float3(1, 0.5, 0), float3(0), Diffuse);
+			material = Material(float3(1, 0.5, 0), Diffuse);
 
 			// Read the file line by line
 			string line;
@@ -460,14 +459,14 @@ namespace Tmpl8 {
 		Scene()
 		{
 			// we store all primitives in one continuous buffer
-			Material red = Material(float3(0.8, 0, 0), float3(0), Diffuse);
-			Material green = Material(float3(0, 1, 0), float3(0), Diffuse);
-			Material blue = Material(float3(0.1, 0.3, 1), float3(0), Diffuse);
-			Material purple = Material(float3(0.9, 0.2, 0.9), float3(0), Glass);
-			Material yellow = Material(float3(1, 0.8, 0), float3(0), Mirror);
-			Material white = Material(float3(1, 1, 1), float3(0), Diffuse);
-			Material light = Material(float3(1, 1, 1), float3(0), Light);
-			Material mirror = Material(float3(1, 1, 1), float3(0), Mirror);
+			Material red = Material(float3(0.8, 0, 0), Diffuse);
+			Material green = Material(float3(0, 1, 0), Diffuse);
+			Material blue = Material(float3(0.1, 0.3, 1), Diffuse);
+			Material purple = Material(float3(0.9, 0.2, 0.9), Glass);
+			Material yellow = Material(float3(1, 0.8, 0), Mirror);
+			Material white = Material(float3(1, 1, 1), Diffuse);
+			Material light = Material(float3(1, 1, 1), Light);
+			Material mirror = Material(float3(1, 1, 1), Mirror);
 
 			mat4 leftT = mat4::Translate(float3(-7, 3, 0)) * mat4::RotateZ(PI / 2);
 			mat4 rightT = mat4::Translate(float3(7, 3, 0)) * mat4::RotateZ(-PI / 2);
@@ -476,7 +475,7 @@ namespace Tmpl8 {
 			mat4 frontT = mat4::Translate(float3(0, 3, -7)) * mat4::RotateX(PI / 2);
 			mat4 backT = mat4::Translate(float3(0, 3, 7)) * mat4::RotateX(-PI / 2);;
 
-			plane[0] = Plane(0, float3(0), 5, light, mat4::Identity());	                    // light source
+			plane[0] = Plane(0, float3(0), 1, light, mat4::Identity());	                    // light source
 			plane[1] = Plane(1, float3(0), 15, red, leftT);									// left wall
 			plane[2] = Plane(2, float3(0), 15, blue, rightT);								// right wall
 			plane[3] = Plane(3, float3(0), 15, white, botT);								// floor
@@ -506,6 +505,75 @@ namespace Tmpl8 {
 			for (int i = 0; i < shapes.size(); i++) {
 				shapes[i]->objIdx = i;
 			}
+		}
+
+		int FindSplit(int lLocal, int rLocal, int& Axis) {
+			if (rLocal > shapes.size() - 1) rLocal = shapes.size() - 1;
+			if (lLocal > shapes.size() - 1 || lLocal >= rLocal) return -1;
+
+			//Get the least cost, skip the computation involving the current node
+			float Cost = INF;
+			//Get the optimal split position
+			int Split;
+
+			vector<float> leftS;
+			aabb aabbLeft;
+			vector<float> rightS;
+			aabb aabbRight;
+
+			//For each axis, find the optimal position
+			for (int axis = 0; axis < 3; axis++) {
+				if (axis == 0) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpx);
+				if (axis == 1) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpy);
+				if (axis == 2) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpz);
+
+				//Get the optimal split position along this axis
+				int split;
+				//Get the least cost along this axis
+				float cost = INF;
+
+				//Compute the left node surface area when the split position is different
+				vector<float>().swap(leftS);
+				aabbLeft = aabb(float3(INF), float3(-INF));
+				for (int i = lLocal; i < rLocal; i++) {
+					aabbLeft = aabbLeft.Union(this->shapes[i]->GetAABB());
+					leftS.push_back(aabbLeft.Area());
+				}
+
+				//Compute the right node surface area when the split position is different
+				vector<float>().swap(rightS);
+				aabbRight = aabb(float3(INF), float3(-INF));
+				for (int i = rLocal; i > lLocal; i--) {
+					aabbRight = aabbRight.Union(this->shapes[i]->GetAABB());
+					rightS.push_back(aabbRight.Area());
+				}
+
+				//Compute the total cost when the split position is different
+				float totalCost;
+				for (int i = 0; i < rLocal - lLocal; i++) {
+					int leftCount = i + 1;
+					int rightCount = rLocal - lLocal - i;
+
+					float leftCost = leftCount * leftS[i];
+					float rightCost = rightCount * rightS[rLocal - lLocal - i - 1];
+
+					totalCost = leftCost + rightCost;
+					if (totalCost < cost) {
+						cost = totalCost;
+						split = lLocal + i;
+					}
+				}
+
+				//If the cost when split along the current axis at the local optimal split
+				//position is better, update the information
+				if (cost < Cost) {
+					Axis = axis;
+					Cost = cost;
+					Split = split;
+				}
+			}
+
+			return Split;
 		}
 
 		int BuildBVH(int l, int r, int n) {
@@ -578,67 +646,8 @@ namespace Tmpl8 {
 
 			//Get the optimal split axis
 			int Axis;
-			//Get the least cost, skip the computation involving the current node
-			float Cost = INF;
-			//Get the optimal split position
-			int Split;
-
-			vector<float> leftS;
-			aabb aabbLeft;
-			vector<float> rightS;
-			aabb aabbRight;
-
-			//For each axis, find the optimal position
-			for (int axis = 0; axis < 3; axis++) {
-				if (axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
-				if (axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
-				if (axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
-
-				//Get the optimal split position along this axis
-				int split;
-				//Get the least cost along this axis
-				float cost = INF;
-
-				//Compute the left node surface area when the split position is different
-				vector<float>().swap(leftS);
-				aabbLeft = aabb(float3(INF), float3(-INF));
-				for (int i = l; i < r; i++) {
-					aabbLeft = aabbLeft.Union(this->shapes[i]->GetAABB());
-					leftS.push_back(aabbLeft.Area());
-				}
-
-				//Compute the right node surface area when the split position is different
-				vector<float>().swap(rightS);
-				aabbRight = aabb(float3(INF), float3(-INF));
-				for (int i = r; i > l; i--) {
-					aabbRight = aabbRight.Union(this->shapes[i]->GetAABB());
-					rightS.push_back(aabbRight.Area());
-				}
-				
-				//Compute the total cost when the split position is different
-				float totalCost;
-				for (int i = 0; i < r - l; i++) {
-					int leftCount = i + 1;
-					int rightCount = r - l - i;
-
-					float leftCost = leftCount * leftS[i];
-					float rightCost = rightCount * rightS[r - l - i - 1];
-
-					totalCost = leftCost + rightCost;
-					if (totalCost < cost) {
-						cost = totalCost;
-						split = l + i;
-					}
-				}
-
-				//If the cost when split along the current axis at the local optimal split
-				//position is better, update the information
-				if (cost < Cost) {
-					Axis = axis;
-					Cost = cost;
-					Split = split;
-				}
-			}
+			
+			int Split = FindSplit(l, r, Axis);
 
 			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
 			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
@@ -680,190 +689,26 @@ namespace Tmpl8 {
 			//axis of the current split method
 			int Axis;							
 			int Middle, MidLeft, MidRight;
-			float Cost = INF;
 
-			int lLocal = l;
-			int rLocal = r;
+			Middle = FindSplit(l, r, Axis);
 
-			vector<float> leftS;
-			aabb aabbLeft;
-			vector<float> rightS;
-			aabb aabbRight;
+			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
+			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
+			if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
 
-			for (int axis = 0; axis < 3; axis++) {
-				if (axis == 0) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpx);
-				if (axis == 1) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpy);
-				if (axis == 2) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpz);
+			MidLeft = FindSplit(l, Middle, Axis);
+			MidLeft = MidLeft == -1 ? l : MidLeft;
 
-				//Get the optimal split position along this axis
-				int middle;
-				//Get the least cost along this axis
-				float cost = INF;
+			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + Middle + 1, cmpx);
+			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + Middle + 1, cmpy);
+			if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + Middle + 1, cmpz);
 
-				//Compute the left node surface area when the split position is different
-				vector<float>().swap(leftS);
-				aabbLeft = aabb(float3(INF), float3(-INF));
-				for (int i = lLocal; i < rLocal; i++) {
-					aabbLeft = aabbLeft.Union(this->shapes[i]->GetAABB());
-					leftS.push_back(aabbLeft.Area());
-				}
+			MidRight = FindSplit(Middle + 1, r, Axis);
+			MidRight = MidRight == -1 ? r - 1 : MidRight;
 
-				//Compute the right node surface area when the split position is different
-				vector<float>().swap(rightS);
-				aabbRight = aabb(float3(INF), float3(-INF));
-				for (int i = rLocal; i > lLocal; i--) {
-					aabbRight = aabbRight.Union(this->shapes[i]->GetAABB());
-					rightS.push_back(aabbRight.Area());
-				}
-
-				//Compute the total cost when the split position is different
-				float totalCost;
-				for (int i = 0; i < rLocal - lLocal; i++) {
-					int leftCount = i + 1;
-					int rightCount = rLocal - lLocal - i;
-
-					float leftCost = leftCount * leftS[i];
-					float rightCost = rightCount * rightS[rLocal - lLocal - i - 1];
-
-					totalCost = leftCost + rightCost;
-					if (totalCost < cost) {
-						cost = totalCost;
-						middle = i + lLocal;
-					}
-				}
-
-				//If the cost when split along the current axis at the local optimal split
-				//position is better, update the information
-				if (cost < Cost) {
-					Axis = axis;
-					Cost = cost;
-					Middle = middle;
-				}
-			}
-
-			if (Axis == 0) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpx);
-			if (Axis == 1) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpy);
-			if (Axis == 2) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpz);
-
-			lLocal = l;
-			rLocal = Middle;
-			Cost = INF;
-			MidLeft = l;
-
-			for (int axis = 0; axis < 3; axis++) {
-				if (axis == 0) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpx);
-				if (axis == 1) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpy);
-				if (axis == 2) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpz);
-
-				//Get the optimal split position along this axis
-				int middle;
-				//Get the least cost along this axis
-				float cost = INF;
-
-				//Compute the left node surface area when the split position is different
-				vector<float>().swap(leftS);
-				aabbLeft = aabb(float3(INF), float3(-INF));
-				for (int i = lLocal; i < rLocal; i++) {
-					aabbLeft = aabbLeft.Union(this->shapes[i]->GetAABB());
-					leftS.push_back(aabbLeft.Area());
-				}
-
-				//Compute the right node surface area when the split position is different
-				vector<float>().swap(rightS);
-				aabbRight = aabb(float3(INF), float3(-INF));
-				for (int i = rLocal; i > lLocal; i--) {
-					aabbRight = aabbRight.Union(this->shapes[i]->GetAABB());
-					rightS.push_back(aabbRight.Area());
-				}
-
-				//Compute the total cost when the split position is different
-				float totalCost;
-				for (int i = 0; i < rLocal - lLocal; i++) {
-					int leftCount = i + 1;
-					int rightCount = rLocal - lLocal - i;
-
-					float leftCost = leftCount * leftS[i];
-					float rightCost = rightCount * rightS[rLocal - lLocal - i - 1];
-
-					totalCost = leftCost + rightCost;
-					if (totalCost < cost) {
-						cost = totalCost;
-						middle = i + lLocal;
-					}
-				}
-
-				//If the cost when split along the current axis at the local optimal split
-				//position is better, update the information
-				if (cost < Cost) {
-					Axis = axis;
-					Cost = cost;
-					MidLeft = middle;
-				}
-			}
-
-			if (Axis == 0) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpx);
-			if (Axis == 1) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpy);
-			if (Axis == 2) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpz);
-
-			lLocal = Middle + 1;
-			rLocal = r;
-			Cost = INF;
-			MidRight = r - 1;
-
-			for (int axis = 0; axis < 3; axis++) {
-				if (axis == 0) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpx);
-				if (axis == 1) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpy);
-				if (axis == 2) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpz);
-
-				//Get the optimal split position along this axis
-				int middle;
-				//Get the least cost along this axis
-				float cost = INF;
-
-				//Compute the left node surface area when the split position is different
-				vector<float>().swap(leftS);
-				aabbLeft = aabb(float3(INF), float3(-INF));
-				for (int i = lLocal; i < rLocal; i++) {
-					aabbLeft = aabbLeft.Union(this->shapes[i]->GetAABB());
-					leftS.push_back(aabbLeft.Area());
-				}
-
-				//Compute the right node surface area when the split position is different
-				vector<float>().swap(rightS);
-				aabbRight = aabb(float3(INF), float3(-INF));
-				for (int i = rLocal; i > lLocal; i--) {
-					aabbRight = aabbRight.Union(this->shapes[i]->GetAABB());
-					rightS.push_back(aabbRight.Area());
-				}
-
-				//Compute the total cost when the split position is different
-				float totalCost;
-				for (int i = 0; i < rLocal - lLocal; i++) {
-					int leftCount = i + 1;
-					int rightCount = rLocal - lLocal - i;
-
-					float leftCost = leftCount * leftS[i];
-					float rightCost = rightCount * rightS[rLocal - lLocal - i - 1];
-
-					totalCost = leftCost + rightCost;
-					if (totalCost < cost) {
-						cost = totalCost;
-						middle = i + lLocal;
-					}
-				}
-
-				//If the cost when split along the current axis at the local optimal split
-				//position is better, update the information
-				if (cost < Cost) {
-					Axis = axis;
-					Cost = cost;
-					MidRight = middle;
-				}
-			}
-
-			if (Axis == 0) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpx);
-			if (Axis == 1) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpy);
-			if (Axis == 2) sort(&shapes[0] + lLocal, &shapes[0] + rLocal + 1, cmpz);
+			if (Axis == 0) sort(&shapes[0] + Middle + 1, &shapes[0] + r + 1, cmpx);
+			if (Axis == 1) sort(&shapes[0] + Middle + 1, &shapes[0] + r + 1, cmpy);
+			if (Axis == 2) sort(&shapes[0] + Middle + 1, &shapes[0] + r + 1, cmpz);
 
 			nodes[idx].c1 = BuildQBVH(l, MidLeft, n);
 			nodes[idx].c2 = BuildQBVH(MidLeft + 1, Middle, n);
@@ -872,41 +717,6 @@ namespace Tmpl8 {
 
 			return idx;
 		}
-
-		void IntersectBVH(Ray& ray, int nodeIdx) const
-		{
-			if (nodeIdx < 0) return;
-			BVHNode node = nodes[nodeIdx];
-			if (IntersectAABB(ray, node.aabb) == 1e30f) return;
-			if (node.n > 0)
-			{
-				for (int i = 0; i < node.n; i++)
-					shapes[node.index + i]->Intersect(ray);
-			}
-			else
-			{
-				IntersectBVH(ray, node.c1);
-				IntersectBVH(ray, node.c2);
-				IntersectBVH(ray, node.c3);
-				IntersectBVH(ray, node.c4);
-			}
-		}
-
-		//void IsoccludedBVH(Ray& ray, int nodeIdx) const
-		//{
-		//	BVHNode node = nodes[nodeIdx];
-		//	if (!IntersectAABB(ray, node.aabbMin, node.aabbMax)) return;
-		//	if (node.n > 0)
-		//	{
-		//		for (uint i = 0; i < node.n; i++)
-		//			shapes[node.index + i]->Intersect(ray);
-		//	}
-		//	else
-		//	{
-		//		IntersectBVH(ray, node.left);
-		//		IntersectBVH(ray, node.right);
-		//	}
-		//}
 
 		void SetTime(float t)
 		{
@@ -928,7 +738,7 @@ namespace Tmpl8 {
 			//float tm = 1 - sqrf(fmodf(animTime, 2.0f) - 1);
 			//sphere.center = float3(-2.0f, -0.5f + tm, 2);
 
-			mat4 M1base = mat4::Translate(float3(0, 5.0f, 0));
+			mat4 M1base = mat4::Translate(float3(0, 4.0f, 0));
 			mat4 M1 = M1base * mat4::Translate(float3(0, -0.9, 0));
 			
 			plane[0].T = M1, plane[0].invT = M1.FastInvertedTransformNoScale();
@@ -944,15 +754,32 @@ namespace Tmpl8 {
 			// light point position is the middle of the swinging quad
 			return plane[0].GetCenter() - float3(0, 0.01f, 0);
 		}
-		float3 GetLightColor(int objIdx) const
+		float3 GetLightColor() const
 		{
-			if (objIdx == -1) return float3(0);
-			return shapes[objIdx]->material.color;
+			return float3(1);
 		}
 		MatType GetObjMatType(int objIdx) const
 		{
 			if (objIdx == -1) return Basic;
 			return shapes[objIdx]->material.type;
+		}
+		void IntersectBVH(Ray& ray, int nodeIdx) const
+		{
+			if (nodeIdx < 0) return;
+			BVHNode node = nodes[nodeIdx];
+			if (IntersectAABB(ray, node.aabb) == 1e30f) return;
+			if (node.n > 0)
+			{
+				for (int i = 0; i < node.n; i++)
+					shapes[node.index + i]->Intersect(ray);
+			}
+			else
+			{
+				IntersectBVH(ray, node.c1);
+				IntersectBVH(ray, node.c2);
+				IntersectBVH(ray, node.c3);
+				IntersectBVH(ray, node.c4);
+			}
 		}
 		void FindNearest(Ray& ray) const
 		{
@@ -968,6 +795,30 @@ namespace Tmpl8 {
 			// - we store objIdx and t when we just need a yes/no
 			// - we don't 'early out' after the first occlusion
 		}
+
+		bool IsOccludedBVH(Ray& ray, int nodeIdx) const
+		{
+			float rayLength = ray.t;
+			BVHNode node = nodes[nodeIdx];
+			if (IntersectAABB(ray, node.aabb) == 1e30f) return false;
+
+			if (node.n > 0)
+			{
+				for (uint i = 0; i < node.n; i++) {
+					shapes[node.index + i]->Intersect(ray);
+					if (ray.t < rayLength) return true;
+					return false;
+				}	
+			}
+			else
+			{
+				if (IsOccludedBVH(ray, node.c1)) return true;
+				if (IsOccludedBVH(ray, node.c2)) return true;
+				if (IsOccludedBVH(ray, node.c3)) return true;
+				if (IsOccludedBVH(ray, node.c4)) return true;
+			}
+		}
+
 		float3 GetNormal(int objIdx, float3 I, float3 wo) const
 		{
 			if (objIdx == -1) return float3(0); 
@@ -980,8 +831,6 @@ namespace Tmpl8 {
 		{
 			if (objIdx == -1) return float3(0);
 			return shapes[objIdx]->material.albedo;
-			// once we have triangle support, we should pass objIdx and the bary-
-			// centric coordinates of the hit, instead of the intersection location.
 		}
 
 		float GetReflectivity(int objIdx, float3 I) const
