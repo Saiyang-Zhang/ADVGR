@@ -10,6 +10,7 @@ namespace Tmpl8
 		void Init();
 		float3 Trace(Ray& ray, int iter);
 		float3 PathTrace(Ray& ray, float iter);
+		float3 PathTraceNew(Ray& ray, float iter);
 		float3 Absorb(float3 color, float d, float3 absorpMat);
 		void Tick(float deltaTime);
 		void Shutdown() { /* implement if you want to do something on exit */ }
@@ -30,6 +31,8 @@ namespace Tmpl8
 		Camera camera;
 		//This is the counter for real time sampling for path tracing
 		float sample;
+		bool pathTrace;
+		int maxPathLength = 16;
 	};
 
 } // namespace Tmpl8

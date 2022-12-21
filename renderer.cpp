@@ -12,6 +12,8 @@ void Renderer::Init()
 	//This is the counter for real time sampling for path tracing
 	sample = 1;
 
+	pathTrace = true;
+
 	Kernel::InitCL();
 
 	Kernel kernel = Kernel("BVH.cl", "IntersectBVHcl");
@@ -174,6 +176,101 @@ float3 Renderer::PathTrace(Ray& ray, float iter = 0) {
 	}
 }
 
+float3 Renderer::PathTraceNew(Ray& ray, float iter = 0) {
+	scene.FindNearest(ray);
+	MatType mat = scene.GetObjMatType(ray.objIdx);
+	float3 color = scene.GetLightColor(ray.objIdx);
+
+	if (mat == Light) return color;
+	if (ray.objIdx == -1 || iter > maxPathLength) return 0; // or a fancy sky color
+
+	if (ray.media == Glass) {
+		Absorb(color, ray.t, scene.GetLightColor(ray.objIdx));
+	}
+
+	//In order to reduce too many recursion, we use this method to randomly decide whether one ray
+	//should stop bouncing between objects. Here the probability of keeping the ray is P = 0.8
+	//double r = rand() * (1.0 / RAND_MAX);
+	//float P = 0.8;
+	//if (r > P) return float3(0);
+
+	float3 I = ray.O + ray.t * ray.D;
+	float3 N = scene.GetNormal(ray.objIdx, I, ray.D);
+	float cos1 = dot(N, -ray.D);
+	float3 color_accum = float3(0);
+
+	if (mat == Diffuse) {
+
+		//Choose the random ray that bounce between objects to implement the environment lighting
+		float3 randomRayDir = normalize(random_in_hemisphere(N));
+		float bounceCos = -dot(ray.D, randomRayDir);
+		Ray rayToHemisphere = Ray(I + randomRayDir * 0.001, randomRayDir, 10000, ray.media);
+		scene.FindNearest(rayToHemisphere);
+
+		if (scene.GetObjMatType(rayToHemisphere.objIdx) == Light) {
+			float3 BRDF = color * INVPI;
+			float cos_i = dot(randomRayDir, N);
+			// the render equation
+			return 2.0f * PI * BRDF * scene.GetLightColor(rayToHemisphere.objIdx) * cos_i;
+		}
+		return float3(0);
+	}
+
+	if (mat == Mirror) {
+		float3 reflectRayDir = normalize(reflect(ray.D, N));
+		Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir);
+		return PathTrace(mirrorRay, iter++);
+	}
+
+	if (mat == Glass) {
+
+		double r = rand() * (1.0 / RAND_MAX);
+		float Fr = 0.5f;
+
+		if (ray.media == Air) {
+
+			float cos2 = sqrt(1 - pow(refractive[AirToGlass] * sqrt(1 - pow(cos1, 2)), 2));
+			Fr = 0.5 * ((pow((cos1 - refractive[GlassToAir] * cos2) / (cos1 + refractive[GlassToAir] * cos2), 2)) + (pow((cos2 - refractive[GlassToAir] * cos1) / (cos2 + refractive[GlassToAir] * cos1), 2)));
+		}
+		if (ray.media == Glass) {
+
+			float cos2 = sqrt(1 - pow(refractive[GlassToAir] * sqrt(1 - pow(cos1, 2)), 2));
+			Fr = 0.5 * ((pow((refractive[GlassToAir] * cos1 - cos2) / (refractive[GlassToAir] * cos1 + cos2), 2)) + (pow((refractive[GlassToAir] * cos2 - cos1) / (refractive[GlassToAir] * cos2 + cos1), 2)));
+		}
+
+		if (r < Fr) {
+
+			//reflect
+			float3 reflectRayDir = normalize(reflect(ray.D, N));
+			Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir);
+			return PathTrace(mirrorRay, iter++);
+		}
+		else
+		{
+			//transmit
+			if (ray.media == Air)
+			{
+				float cos2 = sqrt(1 - pow(refractive[AirToGlass] * sqrt(1 - pow(cos1, 2)), 2));
+				float k = 1 - pow(refractive[AirToGlass], 2) * (1 - pow(cos1, 2));
+
+				float3 refractRayDir = normalize(-cos2 * N + refractive[AirToGlass] * (ray.D + cos1 * N));
+				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, Glass);
+
+				return PathTrace(refractRay, iter++);
+			}
+			if (ray.media == Glass) {
+
+				float cos2 = sqrt(1 - pow(refractive[GlassToAir] * sqrt(1 - pow(cos1, 2)), 2));
+
+				float3 refractRayDir = normalize(-cos2 * N + refractive[GlassToAir] * (ray.D + cos1 * N));
+				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, 10000, Air);
+
+				return PathTrace(refractRay, iter++);
+			}
+		}
+	}
+}
+
 float3 Renderer::Absorb(float3 color, float distance, float3 absorption)
 {
 	float3 output = color;
@@ -202,18 +299,26 @@ void Renderer::Tick(float deltaTime)
 		// trace a primary ray for each pixel on the line
 		for (int x = 0; x < SCRWIDTH; x++)
 		{
-			float3 color = float3(0);
-			color = Trace(camera.GetPrimaryRay(x, y));
+			if (pathTrace) {
+				float3 color = PathTraceNew(camera.GetPrimaryRay(x, y));
 
-			////anti-aliasing
-			//color = color + Trace(camera.GetPrimaryRay(x + 0.25, y + 0.1));
-			//color = color + Trace(camera.GetPrimaryRay(x - 0.25, y - 0.1));
-			//color = color + Trace(camera.GetPrimaryRay(x + 0.1, y - 0.25));
-			//color = color + Trace(camera.GetPrimaryRay(x - 0.1, y + 0.25));
-			//color = 0.25 * color;
+				accumulator[x + y * SCRWIDTH] *= (sample - 1) / sample;
+				accumulator[x + y * SCRWIDTH] += float4(color * (BRIGHTNESS / sample), 0);
+			}
+			else {
+				float3 color = float3(0);
+				color = Trace(camera.GetPrimaryRay(x, y));
 
-			accumulator[x + y * SCRWIDTH] =
-				float4(color, 0);
+				////anti-aliasing
+				//color = color + Trace(camera.GetPrimaryRay(x + 0.25, y + 0.1));
+				//color = color + Trace(camera.GetPrimaryRay(x - 0.25, y - 0.1));
+				//color = color + Trace(camera.GetPrimaryRay(x + 0.1, y - 0.25));
+				//color = color + Trace(camera.GetPrimaryRay(x - 0.1, y + 0.25));
+				//color = 0.25 * color;
+
+				accumulator[x + y * SCRWIDTH] =
+					float4(color, 0);
+			}
 		}
 
 		// translate accumulator contents to rgb32 pixels
@@ -221,6 +326,8 @@ void Renderer::Tick(float deltaTime)
 			screen->pixels[dest + x] =
 			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
 	}
+
+	if (pathTrace) sample++;
 
 ////2. Fixed sampling for path tracing, uncomment this and comment 1. 3. to render this way
 //	int i, fsample = 4;
@@ -274,7 +381,7 @@ void Renderer::Tick(float deltaTime)
 	
 	// in game control
 	//Move left
-	if (GetKeyState('A') < 0) camera.Translate(float3(0.1, 0, 0));
+	if (GetKeyState('A') < 0) camera.Translate(float3(0.1, 0, 0)); 
 	//Move right
 	if (GetKeyState('D') < 0) camera.Translate(float3(-0.1, 0, 0));
 	//Move backward
