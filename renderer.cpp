@@ -188,11 +188,12 @@ float3 Renderer::PathTraceNew(Ray& ray, float iter = 0) {
 		Absorb(color, ray.t, scene.GetLightColor(ray.objIdx));
 	}
 
-	//In order to reduce too many recursion, we use this method to randomly decide whether one ray
-	//should stop bouncing between objects. Here the probability of keeping the ray is P = 0.8
-	//double r = rand() * (1.0 / RAND_MAX);
-	//float P = 0.8;
-	//if (r > P) return float3(0);
+	//In order to reduce too many recursion, we use this method to decide whether one ray
+	//should stop bouncing between objects using russian roulette.
+	double r = rand() * (1.0 / RAND_MAX);
+	float m = max(color.x, color.y);
+	float P = max(min(max(m, color.z), 0.9f), 0.1f);
+	if (r > P) return float3(0);
 
 	float3 I = ray.O + ray.t * ray.D;
 	float3 N = scene.GetNormal(ray.objIdx, I, ray.D);
@@ -203,7 +204,7 @@ float3 Renderer::PathTraceNew(Ray& ray, float iter = 0) {
 
 		//Choose the random ray that bounce between objects to implement the environment lighting
 		float3 randomRayDir = normalize(random_in_hemisphere(N));
-		//float3 randomRayDir = normalize(I + N + normalize(CosineWeightedDiffuseReflection()));
+		//float3 randomRayDir = normalize(N + normalize(CosineWeightedDiffuseReflection()));
 		float bounceCos = -dot(ray.D, randomRayDir);
 		Ray rayToHemisphere = Ray(I + randomRayDir * 0.001, randomRayDir, 10000, ray.media);
 		scene.FindNearest(rayToHemisphere);
