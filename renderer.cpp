@@ -203,6 +203,7 @@ float3 Renderer::PathTraceNew(Ray& ray, float iter = 0) {
 
 		//Choose the random ray that bounce between objects to implement the environment lighting
 		float3 randomRayDir = normalize(random_in_hemisphere(N));
+		//float3 randomRayDir = normalize(I + N + normalize(CosineWeightedDiffuseReflection()));
 		float bounceCos = -dot(ray.D, randomRayDir);
 		Ray rayToHemisphere = Ray(I + randomRayDir * 0.001, randomRayDir, 10000, ray.media);
 		scene.FindNearest(rayToHemisphere);
@@ -210,8 +211,10 @@ float3 Renderer::PathTraceNew(Ray& ray, float iter = 0) {
 		if (scene.GetObjMatType(rayToHemisphere.objIdx) == Light) {
 			float3 BRDF = color * INVPI;
 			float cos_i = dot(randomRayDir, N);
-			// the render equation
-			return 2.0f * PI * BRDF * scene.GetLightColor(rayToHemisphere.objIdx) * cos_i;
+			float PDF = 1 / BRIGHTNESS;
+			//float PDF = cos_i / PI;
+			float3 Ei = scene.GetLightColor(rayToHemisphere.objIdx) * cos_i / PDF;
+			return BRDF * Ei;
 		}
 		return float3(0);
 	}

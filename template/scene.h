@@ -92,6 +92,16 @@ namespace Tmpl8 {
 		}
 	}
 
+	inline float3 CosineWeightedDiffuseReflection() {
+		float r0 = rand() * (1.0 / RAND_MAX);
+		float r1 = rand() * (1.0 / RAND_MAX);
+		float r = sqrt(r0);
+		float theta = 2 * PI * r1;
+		float x = r * cosf(theta);
+		float y = r * sinf(theta);
+		return float3(x, y, sqrt(1 - r0));
+	}
+
 	__declspec(align(64)) class Ray
 	{
 	public:
