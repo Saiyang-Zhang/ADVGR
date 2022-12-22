@@ -433,6 +433,11 @@ namespace Tmpl8 {
 		aabb aabb;			//aabb
 	};
 
+	struct Bin {
+		int n;
+		aabb aabb;
+	};
+
 	inline float IntersectAABB(const Ray & ray, const aabb box)
 	{
 		float3 bmin = box.bmin3;
@@ -500,7 +505,40 @@ namespace Tmpl8 {
 
 			SetTime(0);
 
-		 	root = BuildQBVH(0, shapes.size()-1, 2);
+		}
+
+		void SetTime(float t)
+		{
+			// default time for the scene is simply 0. Updating/ the time per frame 
+			// enables animation. Updating it per ray can be used for motion blur.
+			animTime = t;
+
+			//// light source animation: swing
+			//mat4 M1base = mat4::Translate(float3(0, 5.0f, 2));
+			//mat4 M1 = M1base * mat4::RotateZ(sinf(animTime * 0.6f) * 0.1f) * mat4::Translate(float3(0, -0.9, 0));
+			//plane[0].T = M1, plane[0].invT = M1.FastInvertedTransformNoScale();
+
+			//// cube animation: spin
+			//mat4 M2base = mat4::RotateX(PI / 4) * mat4::RotateZ(PI / 4);
+			//mat4 M2 = mat4::Translate(float3(2.0f, 0, 2)) * mat4::RotateY(animTime * 0.5f) * M2base;
+			//cube.T = M2, cube.invT = M2.FastInvertedTransformNoScale();
+
+			//// sphere animation: bounce
+			//float tm = 1 - sqrf(fmodf(animTime, 2.0f) - 1);
+			//sphere.center = float3(-2.0f, -0.5f + tm, 2);
+
+			mat4 M1base = mat4::Translate(float3(0, 4.0f, 0));
+			mat4 M1 = M1base * mat4::Translate(float3(0, -0.9, 0));
+
+			plane[0].T = M1, plane[0].invT = M1.FastInvertedTransformNoScale();
+
+			mat4 M2 = mat4::Translate(float3(2.0f, 0, 2));
+			cube.T = M2, cube.invT = M2.FastInvertedTransformNoScale();
+
+			sphere.center = float3(-2.0f, 0.2, 2);
+
+			root = BuildQBVH(0, shapes.size() - 1, 2);
+			//root = BuildBVH_BIN(0, shapes.size() - 1, 2, 8);
 
 			for (int i = 0; i < shapes.size(); i++) {
 				shapes[i]->objIdx = i;
@@ -516,10 +554,9 @@ namespace Tmpl8 {
 			//Get the optimal split position
 			int Split;
 
-			vector<float> leftS;
-			aabb aabbLeft;
-			vector<float> rightS;
-			aabb aabbRight;
+			vector<float> leftS, rightS;
+			aabb aabbLeft, aabbRight;
+			int leftCount, rightCount;
 
 			//For each axis, find the optimal position
 			for (int axis = 0; axis < 3; axis++) {
@@ -548,11 +585,14 @@ namespace Tmpl8 {
 					rightS.push_back(aabbRight.Area());
 				}
 
+				leftCount = 0;
+				rightCount = rLocal - lLocal + 1;
+
 				//Compute the total cost when the split position is different
 				float totalCost;
 				for (int i = 0; i < rLocal - lLocal; i++) {
-					int leftCount = i + 1;
-					int rightCount = rLocal - lLocal - i;
+					leftCount += 1;
+					rightCount -= 1;
 
 					float leftCost = leftCount * leftS[i];
 					float rightCost = rightCount * rightS[rLocal - lLocal - i - 1];
@@ -718,37 +758,152 @@ namespace Tmpl8 {
 			return idx;
 		}
 
-		void SetTime(float t)
-		{
-			// default time for the scene is simply 0. Updating/ the time per frame 
-			// enables animation. Updating it per ray can be used for motion blur.
-			animTime = t;
+		int FindBinSplit(int lLocal, int rLocal, BVHNode& node, int& Axis, int bin) {
+			if (rLocal > shapes.size() - 1) rLocal = shapes.size() - 1;
+			if (lLocal > shapes.size() - 1 || lLocal >= rLocal) return -1;
 
-			//// light source animation: swing
-			//mat4 M1base = mat4::Translate(float3(0, 5.0f, 2));
-			//mat4 M1 = M1base * mat4::RotateZ(sinf(animTime * 0.6f) * 0.1f) * mat4::Translate(float3(0, -0.9, 0));
-			//plane[0].T = M1, plane[0].invT = M1.FastInvertedTransformNoScale();
+			//Get the least cost, skip the computation involving the current node
+			float Cost = INF;
+			//Get the optimal split position
+			int Split = -1;
 
-			//// cube animation: spin
-			//mat4 M2base = mat4::RotateX(PI / 4) * mat4::RotateZ(PI / 4);
-			//mat4 M2 = mat4::Translate(float3(2.0f, 0, 2)) * mat4::RotateY(animTime * 0.5f) * M2base;
-			//cube.T = M2, cube.invT = M2.FastInvertedTransformNoScale();
+			vector<float> leftS, rightS;
+			aabb aabbLeft, aabbRight;
+			int leftCount, rightCount;
+			Bin b;
+			b.aabb = aabb(float3(INF), float3(-INF));
+			b.n = 0;
+			vector<Bin> bins(bin, b);
 
-			//// sphere animation: bounce
-			//float tm = 1 - sqrf(fmodf(animTime, 2.0f) - 1);
-			//sphere.center = float3(-2.0f, -0.5f + tm, 2);
+			//For each axis, find the optimal position
+			for (int axis = 0; axis < 3; axis++) {
+				//Get the optimal split position along this axis
+				int split;
+				//Get the least cost along this axis
+				float cost = INF;
+				
+				vector<float>().swap(leftS);
+				vector<float>().swap(rightS);
+				aabbLeft = aabb(float3(INF), float3(-INF));
+				aabbRight = aabb(float3(INF), float3(-INF));
+				
+				bins = vector<Bin>(bin, b);
+				
+				float boundsMax = node.aabb.bmax3[axis];
+				float boundsMin = node.aabb.bmin3[axis];
+				
+				float scale = bin / (boundsMax - boundsMin);
 
-			mat4 M1base = mat4::Translate(float3(0, 4.0f, 0));
-			mat4 M1 = M1base * mat4::Translate(float3(0, -0.9, 0));
-			
-			plane[0].T = M1, plane[0].invT = M1.FastInvertedTransformNoScale();
+				for (int i = lLocal; i <= rLocal; i++)
+				{
+					int binIdx = min(bin - 1,
+						(int)((shapes[i]->GetCenter()[axis] - boundsMin) * scale));
+					bins[binIdx].n++;
+					bins[binIdx].aabb = bins[binIdx].aabb.Union(shapes[i]->GetAABB());
+				}
 
-			mat4 M2 = mat4::Translate(float3(2.0f, 0, 2));
-			cube.T = M2, cube.invT = M2.FastInvertedTransformNoScale();
-	
-			sphere.center = float3(-2.0f, 0.2, 2);
-		
+				//Compute the left node surface area when the split position is different
+				leftCount = 0;
+				for (int i = 0; i < bin - 1; i++) {
+					aabbLeft = aabbLeft.Union(bins[i].aabb);
+					leftCount += bins[i].n;
+					if (leftCount > 0) leftS.push_back(aabbLeft.Area());
+					else leftS.push_back(0);
+				}
+
+				//Compute the right node surface area when the split position is different
+				rightCount = rLocal - lLocal + 1;
+				for (int i = bin - 1; i > 0; i--) {
+					aabbRight = aabbRight.Union(bins[i].aabb);
+					rightCount -= bins[i].n;
+					if (rightCount > 0) rightS.push_back(aabbRight.Area());
+					else rightS.push_back(0);
+				}
+
+				leftCount = 0;
+				rightCount = rLocal - lLocal + 1;
+
+				//Compute the total cost when the split position is different
+				float totalCost;
+				for (int i = 0; i < bin - 1; i++) {
+					leftCount += bins[i].n;
+					rightCount -= bins[i].n;
+					if (leftCount == 0 || rightCount == 0) continue;
+					float leftCost = leftCount * leftS[i];
+					float rightCost = rightCount * rightS[bin - i - 2];
+
+					totalCost = leftCost + rightCost;
+					if (totalCost < cost) {
+						cost = totalCost;
+						split = lLocal + leftCount;
+					}
+				}
+
+				//If the cost when split along the current axis at the local optimal split
+				//position is better, update the information
+				if (cost < Cost) {
+					Axis = axis;
+					Cost = cost;
+					Split = split;
+				}
+			}
+
+			return Split;
 		}
+
+		int BuildBVH_BIN(int l, int r, int n, int bin) {
+			//no nodes 
+			if (l > r) return -1;
+
+			//generate newest node
+			int idx = nodes.size();
+			nodes.push_back(BVHNode());
+			nodes[idx].c1 = -1;
+			nodes[idx].c2 = -1;
+			nodes[idx].c3 = -1;
+			nodes[idx].c4 = -1;
+			nodes[idx].n = -1;
+			nodes[idx].index = -1;
+			nodes[idx].aabb = aabb(float3(INF), float3(-INF));
+
+			//update node boundary
+			for (int i = l; i <= r; i++) {
+				nodes[idx].aabb = nodes[idx].aabb.Union(shapes[i]->GetAABB());
+			}
+
+			//if less than n shapes in this node, then this is a leaf node
+			if ((r - l + 1) <= n) {
+				nodes[idx].n = r - l + 1;
+				nodes[idx].index = l;
+				return idx;
+			}
+
+			//Get the optimal split axis
+			int Axis;
+			int Split;
+
+			if (r - l > 2 * bin) {
+				Split = FindBinSplit(l, r, nodes[idx], Axis, bin);
+			}
+			else {
+				Split = FindSplit(l, r, Axis);
+			}
+			if (Split == -1) {
+				Split = FindSplit(l, r, Axis);
+			}
+
+			//printf("Split: %d\n", Split);
+
+			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
+			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
+			if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
+
+			nodes[idx].c1 = BuildBVH_BIN(l, Split, n, bin);
+			nodes[idx].c2 = BuildBVH_BIN(Split + 1, r, n, bin);
+
+			return idx;
+		}
+
 		float3 GetLightPos() const
 		{
 			// light point position is the middle of the swinging quad
@@ -804,7 +959,7 @@ namespace Tmpl8 {
 
 			if (node.n > 0)
 			{
-				for (uint i = 0; i < node.n; i++) {
+				for (int i = 0; i < node.n; i++) {
 					shapes[node.index + i]->Intersect(ray);
 					if (ray.t < rayLength) return true;
 					return false;
