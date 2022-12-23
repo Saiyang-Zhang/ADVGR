@@ -486,7 +486,7 @@ namespace Tmpl8 {
 			mat4 frontT = mat4::Translate(float3(0, 3, -7)) * mat4::RotateX(PI / 2);
 			mat4 backT = mat4::Translate(float3(0, 3, 7)) * mat4::RotateX(-PI / 2);;
 
-			plane[0] = Plane(0, float3(0), 1, light, mat4::Identity());	                    // light source
+			plane[0] = Plane(0, float3(0), 4, light, mat4::Identity());	                    // light source
 			plane[1] = Plane(1, float3(0), 15, red, leftT);									// left wall
 			plane[2] = Plane(2, float3(0), 15, blue, rightT);								// right wall
 			plane[3] = Plane(3, float3(0), 15, white, botT);								// floor
