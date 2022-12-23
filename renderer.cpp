@@ -193,10 +193,9 @@ float3 Renderer::PathTrace(Ray& ray, float iter = 0) {
 float3 Renderer::PathTraceNew(Ray& ray, float iter = 0) {
 	scene.FindNearest(ray);
 	MatType mat = scene.GetObjMatType(ray.objIdx);
-	float3 color = scene.GetLightColor();
 	float3 albedo = scene.GetAlbedo(ray.objIdx, 0);
 
-	if (mat == Light) return color;
+	if (mat == Light) return scene.GetLightColor();;
 	if (ray.objIdx == -1 || iter > maxPathLength) return 0; // or a fancy sky color
 
 	if (ray.media == Glass) {
@@ -206,8 +205,8 @@ float3 Renderer::PathTraceNew(Ray& ray, float iter = 0) {
 	//In order to reduce too many recursion, we use this method to decide whether one ray
 	//should stop bouncing between objects using russian roulette.
 	double r = rand() * (1.0 / RAND_MAX);
-	float m = max(color.x, color.y);
-	float P = max(min(max(m, color.z), 0.9f), 0.1f);
+	float m = max(albedo.x, albedo.y);
+	float P = max(min(max(m, albedo.z), 0.9f), 0.1f);
 	if (r > P) return float3(0);
 
 	float3 I = ray.O + ray.t * ray.D;
@@ -225,7 +224,7 @@ float3 Renderer::PathTraceNew(Ray& ray, float iter = 0) {
 		scene.FindNearest(rayToHemisphere);
 
 		if (scene.GetObjMatType(rayToHemisphere.objIdx) == Light) {
-			float3 BRDF = color * INVPI;
+			float3 BRDF = albedo * INVPI;
 			float cos_i = dot(randomRayDir, N);
 			float PDF = 1 / BRIGHTNESS;
 			//float PDF = cos_i / PI;
@@ -364,7 +363,7 @@ void Renderer::Tick(float deltaTime)
 //			screen->pixels[dest + x] =
 //			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
 //	}
-
+//
 ////3. Real-time sampling for path tracing, uncomment this and comment 1. 2. to render this way
 ////(in game control is hardly usable here).
 //	printf("sample: %f\n", sample);
@@ -387,7 +386,7 @@ void Renderer::Tick(float deltaTime)
 //			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
 //	}
 //	sample++;
-
+//
 //////4. Real-time sampling for path tracing, uncomment this and comment 1. 2. to render this way
 ////(in game control is hardly usable here).
 //	printf("sample: %f\n", sample);
@@ -440,4 +439,6 @@ void Renderer::Tick(float deltaTime)
 	float fps = 1000 / avg, rps = (SCRWIDTH * SCRHEIGHT) * fps;
 
 	printf("%5.2fms (%.1fps) - %.1fMrays/s\n", avg, fps, rps / 1000000);
+	printf("ray count: %d, avg depth: %f\n", raycount, alldepth / raycount);
+	printf("%5.2fms nodes: %d\n", totaltime/bvhcount * 1000, scene.nodes.size());
 }
