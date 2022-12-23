@@ -41,7 +41,7 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	MatType mat = scene.GetObjMatType(ray.objIdx);
 	float3 lightColor = scene.GetLightColor();
 
-	if (scene.IsOccluded(shadowray)) {
+	if (scene.IsOccludedBVH(shadowray, scene.root)) {
 		if (mat == Mirror) {
 			float3 reflectRayDir = normalize(reflect(ray.D, N));
 			Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir);
@@ -63,13 +63,13 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	}
 	if (mat == Mirror) {
 		float3 reflectRayDir = normalize(reflect(ray.D, N));
-		Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, 10000, Air);
+		Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, Air);
 		return albedo * Trace(mirrorRay, iter + 1);
 	}	
 	if (mat == Glass) 
 	{	
 		float3 reflectRayDir = normalize(reflect(ray.D, N));
-		Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, 10000, ray.media);
+		Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, ray.media);
 		
 		float k;
 		float cos2;
@@ -79,7 +79,7 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 			k = 1 - pow(refractive[AirToGlass], 2) * (1 - pow(cos1, 2));
 			
 			float3 refractRayDir = normalize(-cos2 * N + refractive[AirToGlass] * (ray.D + cos1 * N));
-			Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, 10000, Glass);
+			Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Glass);
 			
 			float Fr = 0.5 * ((pow((cos1 - refractive[GlassToAir] * cos2) / (cos1 + refractive[GlassToAir] * cos2), 2)) + (pow((cos2 - refractive[GlassToAir] * cos1) / (cos2 + refractive[GlassToAir] * cos1), 2)));
 			float Ft = 1 - Fr;
@@ -93,7 +93,7 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 				cos2 = sqrt(1 - pow(refractive[GlassToAir] * sqrt(1 - pow(cos1, 2)), 2));
 
 				float3 refractRayDir = normalize(-cos2 * N + refractive[GlassToAir] * (ray.D + cos1 * N));
-				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, 10000, Air);
+				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Air);
 
 				float Fr = 0.5 * ((pow((refractive[GlassToAir] * cos1 - cos2) / (refractive[GlassToAir] * cos1 + cos2), 2)) + (pow((refractive[GlassToAir] * cos2 - cos1) / (refractive[GlassToAir] * cos2 + cos1), 2)));
 				float Ft = 1 - Fr;
@@ -127,7 +127,7 @@ float3 Renderer::PathTrace(Ray& ray, float iter = 0) {
 	//Choose the random ray that bounce between objects to implement the environment lighting
 	float3 randomRayDir = normalize(random_in_hemisphere(N));
 	float bounceCos = -dot(ray.D, randomRayDir);
-	Ray randomRay = Ray(I + randomRayDir * 0.001, randomRayDir, 10000, ray.media);
+	Ray randomRay = Ray(I + randomRayDir * 0.001, randomRayDir, INF, ray.media);
 	
 	//float3 albedo = scene.GetAlbedo(ray.objIdx, I);
 
@@ -148,7 +148,7 @@ float3 Renderer::PathTrace(Ray& ray, float iter = 0) {
 	if (mat == Glass)
 	{
 		float3 reflectRayDir = normalize(reflect(ray.D, N));
-		Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, 10000, ray.media);
+		Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, ray.media);
 
 		float k;
 		float cos2;
@@ -158,7 +158,7 @@ float3 Renderer::PathTrace(Ray& ray, float iter = 0) {
 			k = 1 - pow(refractive[AirToGlass], 2) * (1 - pow(cos1, 2));
 
 			float3 refractRayDir = normalize(-cos2 * N + refractive[AirToGlass] * (ray.D + cos1 * N));
-			Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, 10000, Glass);
+			Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Glass);
 
 			float Fr = 0.5 * ((pow((cos1 - refractive[GlassToAir] * cos2) / (cos1 + refractive[GlassToAir] * cos2), 2)) + (pow((cos2 - refractive[GlassToAir] * cos1) / (cos2 + refractive[GlassToAir] * cos1), 2)));
 			float Ft = 1 - Fr;
@@ -172,7 +172,7 @@ float3 Renderer::PathTrace(Ray& ray, float iter = 0) {
 				cos2 = sqrt(1 - pow(refractive[GlassToAir] * sqrt(1 - pow(cos1, 2)), 2));
 
 				float3 refractRayDir = normalize(-cos2 * N + refractive[GlassToAir] * (ray.D + cos1 * N));
-				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, 10000, Air);
+				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Air);
 
 				float Fr = 0.5 * ((pow((refractive[GlassToAir] * cos1 - cos2) / (refractive[GlassToAir] * cos1 + cos2), 2)) + (pow((refractive[GlassToAir] * cos2 - cos1) / (refractive[GlassToAir] * cos2 + cos1), 2)));
 				float Ft = 1 - Fr;
@@ -214,7 +214,7 @@ float3 Renderer::PathTraceNew(Ray& ray, float iter = 0) {
 		float3 randomRayDir = normalize(random_in_hemisphere(N));
 		//float3 randomRayDir = normalize(N + normalize(CosineWeightedDiffuseReflection()));
 		float bounceCos = -dot(ray.D, randomRayDir);
-		Ray rayToHemisphere = Ray(I + randomRayDir * 0.001, randomRayDir, 10000, ray.media);
+		Ray rayToHemisphere = Ray(I + randomRayDir * 0.001, randomRayDir, INF, ray.media);
 		scene.FindNearest(rayToHemisphere);
 
 		if (scene.GetObjMatType(rayToHemisphere.objIdx) == Light) {
@@ -275,7 +275,7 @@ float3 Renderer::PathTraceNew(Ray& ray, float iter = 0) {
 				float cos2 = sqrt(1 - pow(refractive[GlassToAir] * sqrt(1 - pow(cos1, 2)), 2));
 
 				float3 refractRayDir = normalize(-cos2 * N + refractive[GlassToAir] * (ray.D + cos1 * N));
-				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, 10000, Air);
+				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Air);
 
 				return PathTraceNew(refractRay, iter++);
 			}

@@ -27,7 +27,7 @@
 namespace Tmpl8 {
 
 	const float BRIGHTNESS = 2.0f * 3.1415926f;
-	const float INF = 1e34f;
+	const float INF = 1e30f;
 
 	enum MatType {
 		Air,
@@ -448,7 +448,7 @@ namespace Tmpl8 {
 		tmin = max(tmin, min(ty1, ty2)), tmax = min(tmax, max(ty1, ty2));
 		float tz1 = (bmin.z - ray.O.z) * ray.rD.z, tz2 = (bmax.z - ray.O.z) * ray.rD.z;
 		tmin = max(tmin, min(tz1, tz2)), tmax = min(tmax, max(tz1, tz2));
-		if (tmax >= tmin && tmin < ray.t && tmax > 0) return tmin; else return 1e30f;
+		if (tmax >= tmin && tmin < ray.t && tmax > 0) return tmin; else return INF;
 	}
 
 	// -----------------------------------------------------------
@@ -538,7 +538,7 @@ namespace Tmpl8 {
 			sphere.center = float3(-2.0f, 0.2, 2);
 
 			root = BuildQBVH(0, shapes.size() - 1, 2);
-			//root = BuildBVH_BIN(0, shapes.size() - 1, 2, 8);
+			//root = BuildQBVH_BIN(0, shapes.size() - 1, 2, 32);
 
 			for (int i = 0; i < shapes.size(); i++) {
 				shapes[i]->objIdx = i;
@@ -770,27 +770,30 @@ namespace Tmpl8 {
 			vector<float> leftS, rightS;
 			aabb aabbLeft, aabbRight;
 			int leftCount, rightCount;
+			float boundsMin, boundsMax;
 			Bin b;
 			b.aabb = aabb(float3(INF), float3(-INF));
 			b.n = 0;
-			vector<Bin> bins(bin, b);
+			vector<Bin> bins;
 
 			//For each axis, find the optimal position
 			for (int axis = 0; axis < 3; axis++) {
-				//Get the optimal split position along this axis
-				int split;
-				//Get the least cost along this axis
-				float cost = INF;
-				
+				int split;					//Get the optimal split position along this axis
+				float cost = INF;			//Get the least cost along this axis
 				vector<float>().swap(leftS);
 				vector<float>().swap(rightS);
+				boundsMin = INF;
+				boundsMax = -INF;
 				aabbLeft = aabb(float3(INF), float3(-INF));
 				aabbRight = aabb(float3(INF), float3(-INF));
+				vector<Bin>(bin, b).swap(bins);
 				
-				bins = vector<Bin>(bin, b);
-				
-				float boundsMax = node.aabb.bmax3[axis];
-				float boundsMin = node.aabb.bmin3[axis];
+				for (int i = lLocal; i <= rLocal; i++)
+				{
+					float a = shapes[i]->GetCenter()[axis];
+					boundsMax = fmaxf(boundsMax, a);
+					boundsMin = fminf(boundsMin, a);
+				}
 				
 				float scale = bin / (boundsMax - boundsMin);
 
@@ -802,22 +805,24 @@ namespace Tmpl8 {
 					bins[binIdx].aabb = bins[binIdx].aabb.Union(shapes[i]->GetAABB());
 				}
 
-				//Compute the left node surface area when the split position is different
+				//for (int i = 0; i < bin; i++) {
+				//	printf("bin: %d, bin.n: %d, binS: %f\n", i, bins[i].n, bins[i].aabb.Area());
+				//}
+
 				leftCount = 0;
 				for (int i = 0; i < bin - 1; i++) {
 					aabbLeft = aabbLeft.Union(bins[i].aabb);
 					leftCount += bins[i].n;
 					if (leftCount > 0) leftS.push_back(aabbLeft.Area());
-					else leftS.push_back(0);
+					else leftS.push_back(INF);
 				}
 
-				//Compute the right node surface area when the split position is different
 				rightCount = rLocal - lLocal + 1;
 				for (int i = bin - 1; i > 0; i--) {
 					aabbRight = aabbRight.Union(bins[i].aabb);
 					rightCount -= bins[i].n;
 					if (rightCount > 0) rightS.push_back(aabbRight.Area());
-					else rightS.push_back(0);
+					else rightS.push_back(INF);
 				}
 
 				leftCount = 0;
@@ -826,16 +831,16 @@ namespace Tmpl8 {
 				//Compute the total cost when the split position is different
 				float totalCost;
 				for (int i = 0; i < bin - 1; i++) {
+					if (bins[i].n == 0) continue;
 					leftCount += bins[i].n;
 					rightCount -= bins[i].n;
-					if (leftCount == 0 || rightCount == 0) continue;
 					float leftCost = leftCount * leftS[i];
 					float rightCost = rightCount * rightS[bin - i - 2];
 
 					totalCost = leftCost + rightCost;
 					if (totalCost < cost) {
 						cost = totalCost;
-						split = lLocal + leftCount;
+						split = lLocal + leftCount - 1;
 					}
 				}
 
@@ -882,17 +887,14 @@ namespace Tmpl8 {
 			int Axis;
 			int Split;
 
-			if (r - l > 2 * bin) {
+			if (r - l > bin) {
 				Split = FindBinSplit(l, r, nodes[idx], Axis, bin);
 			}
 			else {
 				Split = FindSplit(l, r, Axis);
 			}
-			if (Split == -1) {
-				Split = FindSplit(l, r, Axis);
-			}
 
-			//printf("Split: %d\n", Split);
+			//printf("l: %d, r: %d, Split: %d\n", l, r, Split);
 
 			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
 			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
@@ -903,6 +905,81 @@ namespace Tmpl8 {
 
 			return idx;
 		}
+
+		int BuildQBVH_BIN(int l, int r, int n, int bin) {
+			//no nodes 
+			if (l > r) return -1;
+
+			//generate newest node
+			int idx = nodes.size();
+			nodes.push_back(BVHNode());
+			nodes[idx].c1 = -1;
+			nodes[idx].c2 = -1;
+			nodes[idx].c3 = -1;
+			nodes[idx].c4 = -1;
+			nodes[idx].n = -1;
+			nodes[idx].index = -1;
+			nodes[idx].aabb = aabb(float3(INF), float3(-INF));
+
+			//update node boundary
+			for (int i = l; i <= r; i++) {
+				nodes[idx].aabb = nodes[idx].aabb.Union(shapes[i]->GetAABB());
+			}
+
+			//if less than n shapes in this node, then this is a leaf node
+			if ((r - l + 1) <= n) {
+				nodes[idx].n = r - l + 1;
+				nodes[idx].index = l;
+				return idx;
+			}
+
+			//axis of the current split method
+			int Axis;
+			int Middle, MidLeft, MidRight;
+
+			if (r - l > bin) {
+				Middle = FindBinSplit(l, r, nodes[idx], Axis, bin);
+			}
+			else {
+				Middle = FindSplit(l, r, Axis);
+			}
+
+			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
+			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
+			if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
+
+			if (Middle - l > bin) {
+				MidLeft = FindBinSplit(l, Middle, nodes[idx], Axis, bin);
+			}
+			else {
+				MidLeft = FindSplit(l, Middle, Axis);
+			}
+			MidLeft = MidLeft == -1 ? l : MidLeft;
+
+			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + Middle + 1, cmpx);
+			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + Middle + 1, cmpy);
+			if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + Middle + 1, cmpz);
+
+			if (Middle - l > bin) {
+				MidRight = FindBinSplit(Middle + 1, r, nodes[idx], Axis, bin);
+			}
+			else {
+				MidRight = FindSplit(Middle + 1, r, Axis);
+			}
+			MidRight = MidRight == -1 ? r - 1 : MidRight;
+
+			if (Axis == 0) sort(&shapes[0] + Middle + 1, &shapes[0] + r + 1, cmpx);
+			if (Axis == 1) sort(&shapes[0] + Middle + 1, &shapes[0] + r + 1, cmpy);
+			if (Axis == 2) sort(&shapes[0] + Middle + 1, &shapes[0] + r + 1, cmpz);
+
+			nodes[idx].c1 = BuildQBVH(l, MidLeft, n);
+			nodes[idx].c2 = BuildQBVH(MidLeft + 1, Middle, n);
+			nodes[idx].c3 = BuildQBVH(Middle + 1, MidRight, n);
+			nodes[idx].c4 = BuildQBVH(MidRight + 1, r, n);
+
+			return idx;
+		}
+
 
 		float3 GetLightPos() const
 		{
@@ -922,7 +999,7 @@ namespace Tmpl8 {
 		{
 			if (nodeIdx < 0) return;
 			BVHNode node = nodes[nodeIdx];
-			if (IntersectAABB(ray, node.aabb) == 1e30f) return;
+			if (IntersectAABB(ray, node.aabb) == INF) return;
 			if (node.n > 0)
 			{
 				for (int i = 0; i < node.n; i++)
@@ -953,17 +1030,18 @@ namespace Tmpl8 {
 
 		bool IsOccludedBVH(Ray& ray, int nodeIdx) const
 		{
+			if (nodeIdx < -1) return false;
 			float rayLength = ray.t;
 			BVHNode node = nodes[nodeIdx];
-			if (IntersectAABB(ray, node.aabb) == 1e30f) return false;
+			if (IntersectAABB(ray, node.aabb) == INF) return false;
 
 			if (node.n > 0)
 			{
 				for (int i = 0; i < node.n; i++) {
 					shapes[node.index + i]->Intersect(ray);
 					if (ray.t < rayLength) return true;
-					return false;
-				}	
+				}
+				return false;
 			}
 			else
 			{
