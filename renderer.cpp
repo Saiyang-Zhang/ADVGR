@@ -41,7 +41,7 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	MatType mat = scene.GetObjMatType(ray.objIdx);
 	float3 lightColor = scene.GetLightColor();
 
-	if (scene.IsOccludedBVH(shadowray, scene.root)) {
+	if (scene.IsOccluded(shadowray)) {
 		if (mat == Mirror) {
 			float3 reflectRayDir = normalize(reflect(ray.D, N));
 			Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir);
@@ -52,6 +52,13 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 		}
 		else return 0.0f;
 	}
+
+	//if (scene.IsOccludedBVH(shadowray, 0)) {
+	//	if (mat == Glass) {
+	//	
+	//	}
+	//	else return 0.0f;
+	//}
 
 	if (mat == Diffuse) {
 		return albedo * (

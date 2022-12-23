@@ -538,14 +538,14 @@ namespace Tmpl8 {
 			sphere.center = float3(-2.0f, 0.2, 2);
 
 			root = BuildQBVH(0, shapes.size() - 1, 2);
-			//root = BuildQBVH_BIN(0, shapes.size() - 1, 2, 32);
+			//root = BuildQBVH_BIN(0, shapes.size() - 1, 2, 24);
 
 			for (int i = 0; i < shapes.size(); i++) {
 				shapes[i]->objIdx = i;
 			}
 		}
 
-		int FindSplit(int lLocal, int rLocal, int& Axis) {
+		inline int FindSplit(int lLocal, int rLocal, int& Axis) {
 			if (rLocal > shapes.size() - 1) rLocal = shapes.size() - 1;
 			if (lLocal > shapes.size() - 1 || lLocal >= rLocal) return -1;
 
@@ -758,7 +758,7 @@ namespace Tmpl8 {
 			return idx;
 		}
 
-		int FindBinSplit(int lLocal, int rLocal, BVHNode& node, int& Axis, int bin) {
+		inline int FindBinSplit(int lLocal, int rLocal, BVHNode& node, int& Axis, int bin) {
 			if (rLocal > shapes.size() - 1) rLocal = shapes.size() - 1;
 			if (lLocal > shapes.size() - 1 || lLocal >= rLocal) return -1;
 
@@ -937,12 +937,12 @@ namespace Tmpl8 {
 			int Axis;
 			int Middle, MidLeft, MidRight;
 
-			if (r - l > bin) {
+//			if (r - l > bin) {
 				Middle = FindBinSplit(l, r, nodes[idx], Axis, bin);
-			}
-			else {
-				Middle = FindSplit(l, r, Axis);
-			}
+			//}
+			//else {
+			//	Middle = FindSplit(l, r, Axis);
+			//}
 
 			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
 			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
@@ -980,22 +980,24 @@ namespace Tmpl8 {
 			return idx;
 		}
 
-
 		float3 GetLightPos() const
 		{
 			// light point position is the middle of the swinging quad
 			return plane[0].GetCenter() - float3(0, 0.01f, 0);
 		}
+
 		float3 GetLightColor() const
 		{
 			return float3(1);
 		}
+		
 		MatType GetObjMatType(int objIdx) const
 		{
 			if (objIdx == -1) return Basic;
 			return shapes[objIdx]->material.type;
 		}
-		void IntersectBVH(Ray& ray, int nodeIdx) const
+		
+		void IntersectBVH(Ray& ray, int nodeIdx, float depth = 0) const
 		{
 			if (nodeIdx < 0) return;
 			BVHNode node = nodes[nodeIdx];
@@ -1007,30 +1009,28 @@ namespace Tmpl8 {
 			}
 			else
 			{
-				IntersectBVH(ray, node.c1);
-				IntersectBVH(ray, node.c2);
-				IntersectBVH(ray, node.c3);
-				IntersectBVH(ray, node.c4);
+				IntersectBVH(ray, node.c1, depth + 1);
+				IntersectBVH(ray, node.c2, depth + 1);
+				IntersectBVH(ray, node.c3, depth + 1);
+				IntersectBVH(ray, node.c4, depth + 1);
 			}
 		}
+		
 		void FindNearest(Ray& ray) const
 		{
 			IntersectBVH(ray, root);
 		}
+		
 		bool IsOccluded(Ray& ray) const
 		{
 			float rayLength = ray.t;
 			IntersectBVH(ray, root);
 			return ray.t < rayLength;
-			// technically this is wasteful: 
-			// - we potentially search beyond rayLength
-			// - we store objIdx and t when we just need a yes/no
-			// - we don't 'early out' after the first occlusion
 		}
 
-		bool IsOccludedBVH(Ray& ray, int nodeIdx) const
+		inline bool IsOccludedBVH(Ray& ray, int nodeIdx) const
 		{
-			if (nodeIdx < -1) return false;
+			if (nodeIdx < 0) return false;
 			float rayLength = ray.t;
 			BVHNode node = nodes[nodeIdx];
 			if (IntersectAABB(ray, node.aabb) == INF) return false;
@@ -1060,6 +1060,7 @@ namespace Tmpl8 {
 			if (dot(N, wo) > 0) N = -N; // hit backside / inside
 			return N;
 		}
+		
 		float3 GetAlbedo(int objIdx, float3 I) const
 		{
 			if (objIdx == -1) return float3(0);
@@ -1087,5 +1088,7 @@ namespace Tmpl8 {
 		vector<Shape*> shapes;
 		vector<BVHNode> nodes;
 		int root;
+
+		float avg_depth;
 	};
 }
