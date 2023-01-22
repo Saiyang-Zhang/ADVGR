@@ -26,6 +26,23 @@
 
 namespace Tmpl8 {
 
+	struct BVHNode {
+		int c1, c2, c3, c4;	//index of children
+		int n, index;		//n children in leaf node, index is idex of the first shape                     
+		aabb aabb;			//aabb
+	};
+
+	struct Bin {
+		int n;
+		aabb aabb;
+	};
+
+	struct Photon {
+		float3 origin;
+		float3 direction;
+		float3 power;
+	};
+
 	const float BRIGHTNESS = 2.0f * 3.1415926f;
 	const float INF = 1e30f;
 
@@ -75,7 +92,7 @@ namespace Tmpl8 {
 		MatType type;
 	};
 
-	inline float3 fsqrt(float3 vector) {
+	inline float3 f3sqrt(float3 vector) {
 		return float3(sqrt(vector.x), sqrt(vector.y), sqrt(vector.z));
 	}
 
@@ -144,6 +161,7 @@ namespace Tmpl8 {
 		virtual float3 GetNormal(const float3 I) const = 0;
 		virtual float3 GetCenter() const = 0;
 		virtual aabb GetAABB() const = 0;
+		virtual Photon GetPhoton() const = 0;
 		
 		int objIdx = -1;
 		Material material;
@@ -168,8 +186,8 @@ namespace Tmpl8 {
 		}
 		void Intersect(Ray& ray) const
 		{
-			float3 oc = ray.O - this->center;
-			float b = dot(oc, ray.D);
+			float3 oc = TransformPosition(ray.O, T) - this->GetCenter();
+			float b = dot(oc, TransformVector(ray.D, T));
 			float c = dot(oc, oc) - this->r * this->r;
 			float t, d = b * b - c;
 			if (d <= 0) return;
@@ -188,15 +206,29 @@ namespace Tmpl8 {
 		}
 		float3 GetNormal(const float3 I) const
 		{
-			return (I - this->center) * invr;
+			return (I - this->GetCenter()) * invr;
 		}
 		float3 GetCenter() const
 		{
-			return this->center;
+			return TransformPosition(center, T);
 		}
 		aabb GetAABB() const
 		{
 			return aabb(this->center - r, this->center + r);
+		}
+
+		Photon GetPhoton() const {
+			Photon result;
+			float3 dir;
+			float x = rand() * (2.0 / RAND_MAX) - 1.0;
+			float y = rand() * (2.0 / RAND_MAX) - 1.0;
+			float z = rand() * (2.0 / RAND_MAX) - 1.0;
+			dir = float3(x, y, z);
+		
+			result.origin = this->GetCenter() + dir * (r + 0.001);
+			result.direction = random_in_hemisphere(dir);
+			result.power = float3(1.0);
+			return result;
 		}
 		float r, invr;
 	};
@@ -266,13 +298,19 @@ namespace Tmpl8 {
 		}
 		float3 GetCenter() const
 		{
-			return TransformPosition(center, invT);
+			return TransformPosition(center, T);
 		}
 		aabb GetAABB() const
 		{
 			float3 b0 = TransformPosition(b[0], T);
 			float3 b1 = TransformPosition(b[1], T);
 			return aabb(fminf(b0, b1), fmaxf(b0, b1));
+		}
+
+		Photon GetPhoton() const {
+			Photon result;
+			
+			return result;
 		}
 		float3 b[2];
 	};
@@ -318,6 +356,12 @@ namespace Tmpl8 {
 			float3 corner1 = TransformPosition(center + float3(- size, 0, -size), T);
 			float3 corner2 = TransformPosition(center + float3(size, 0, size), T);
 			return aabb(fminf(corner1, corner2), fmaxf(corner1, corner2));
+		}
+
+		Photon GetPhoton() const {
+			Photon result;
+
+			return result;
 		}
 		float size;
 	};
@@ -370,6 +414,12 @@ namespace Tmpl8 {
 		aabb GetAABB() const
 		{   
 			return aabb(fminf(fminf(v0, v1), v2), fmaxf(fmaxf(v0, v1), v2));
+		}
+
+		Photon GetPhoton() const {
+			Photon result;
+
+			return result;
 		}
 		float3 v0, v1, v2, N;
 	};
@@ -433,17 +483,6 @@ namespace Tmpl8 {
 		return s1->GetAABB().Center(2) < s2->GetAABB().Center(2);
 	}
 
-	struct BVHNode {
-		int c1, c2, c3, c4;	//index of children
-		int n, index;		//n children in leaf node, index is idex of the first shape                     
-		aabb aabb;			//aabb
-	};
-
-	struct Bin {
-		int n;
-		aabb aabb;
-	};
-
 	inline float IntersectAABB(const Ray & ray, const aabb box)
 	{
 		float3 bmin = box.bmin3;
@@ -481,8 +520,8 @@ namespace Tmpl8 {
 
 			mat4 leftT = mat4::Translate(float3(-7, 3, 0)) * mat4::RotateZ(PI / 2);
 			mat4 rightT = mat4::Translate(float3(7, 3, 0)) * mat4::RotateZ(-PI / 2);
-			mat4 topT = mat4::Translate(float3(0, 10, 0));
-			mat4 botT = mat4::Translate(float3(0, -2, 0)) * mat4::RotateZ(PI);
+			mat4 topT = mat4::Translate(float3(0, 6, 0));
+			mat4 botT = mat4::Translate(float3(0, -1, 0)) * mat4::RotateZ(PI);
 			mat4 frontT = mat4::Translate(float3(0, 3, -7)) * mat4::RotateX(PI / 2);
 			mat4 backT = mat4::Translate(float3(0, 3, 7)) * mat4::RotateX(-PI / 2);;
 
@@ -494,13 +533,15 @@ namespace Tmpl8 {
 			plane[5] = Plane(5, float3(0), 15, green, frontT);								// front wall
 			plane[6] = Plane(6, float3(0), 15, white, backT);								// back wall
 			sphere = Sphere(6, float3(0), 0.5f, yellow);									// yellow mirror sphere
+			bulb = Sphere(0, float3(0, 5.5, 0), 2.0f, light);
 			cube = Cube(8, float3(0), float3(1.15f), purple, mat4::Identity());				// purple glass cube
 			
-			for (int i = 0; i < 7; i++) {
+			for (int i = 1; i < 7; i++) {
 				shapes.push_back(&plane[i]);
 			}
 
 			shapes.push_back(&sphere);
+			shapes.push_back(&bulb);
 			shapes.push_back(&cube);
 
 			mesh = TriangleMesh(0, "assets/bunny.obj");
@@ -508,6 +549,8 @@ namespace Tmpl8 {
 			for (int i = 0; i < mesh.triangles.size(); i++) {
 				shapes.push_back(&mesh.triangles[i]);
 			}
+
+			lights.push_back(&bulb);
 
 			SetTime(0);
 
@@ -533,11 +576,6 @@ namespace Tmpl8 {
 			//float tm = 1 - sqrf(fmodf(animTime, 2.0f) - 1);
 			//sphere.center = float3(-2.0f, -0.5f + tm, 2);
 
-			mat4 M1base = mat4::Translate(float3(0, 4.0f, 0));
-			mat4 M1 = M1base * mat4::Translate(float3(0, -0.9, 0));
-
-			plane[0].T = M1, plane[0].invT = M1.FastInvertedTransformNoScale();
-
 			mat4 M2 = mat4::Translate(float3(2.0f, 0, 2));
 			cube.T = M2, cube.invT = M2.FastInvertedTransformNoScale();
 
@@ -545,13 +583,13 @@ namespace Tmpl8 {
 
 			vector<BVHNode>().swap(nodes);
 
-			bvhcount++;
-			Timer time;
+			//bvhcount++;
+			//Timer time;
 			
 			root = BuildQBVH(0, shapes.size() - 1, 2);
 			//root = BuildBVH_BIN(0, shapes.size() - 1, 2, 16);
 
-			totaltime += time.elapsed();
+			//totaltime += time.elapsed();
 
 			for (int i = 0; i < shapes.size(); i++) {
 				shapes[i]->objIdx = i;
@@ -980,25 +1018,8 @@ namespace Tmpl8 {
 
 			return idx;
 		}
-
-		float3 GetLightPos() const
-		{
-			// light point position is the middle of the swinging quad
-			return plane[0].GetCenter() - float3(0, 0.01f, 0);
-		}
-
-		float3 GetLightColor() const
-		{
-			return float3(1);
-		}
 		
-		MatType GetObjMatType(int objIdx) const
-		{
-			if (objIdx == -1) return Basic;
-			return shapes[objIdx]->material.type;
-		}
-		
-		void IntersectBVH(Ray& ray, int nodeIdx, float& depth) const
+		void IntersectBVH(Ray& ray, int nodeIdx) const
 		{
 			if (nodeIdx < 0) return;
 			BVHNode node = nodes[nodeIdx];
@@ -1007,15 +1028,13 @@ namespace Tmpl8 {
 			{
 				for (int i = 0; i < node.n; i++)
 					shapes[node.index + i]->Intersect(ray);
-				depth++;
 			}
 			else
 			{
-				depth++;
-				IntersectBVH(ray, node.c1, depth);
-				IntersectBVH(ray, node.c2, depth);
-				IntersectBVH(ray, node.c3, depth);
-				IntersectBVH(ray, node.c4, depth);
+				IntersectBVH(ray, node.c1);
+				IntersectBVH(ray, node.c2);
+				IntersectBVH(ray, node.c3);
+				IntersectBVH(ray, node.c4);
 			}
 		}
 		
@@ -1023,7 +1042,7 @@ namespace Tmpl8 {
 		{
 			float depth = 0;
 			raycount++;
-			IntersectBVH(ray, root, depth);
+			IntersectBVH(ray, root);
 			alldepth += depth;
 		}
 		
@@ -1031,9 +1050,9 @@ namespace Tmpl8 {
 		{
 			float depth = 0;
 			float rayLength = ray.t;
-			IntersectBVH(ray, root, depth);
+			IntersectBVH(ray, root);
 			alldepth += depth;
-			return ray.t < rayLength;
+			return ray.t < rayLength && shapes[ray.objIdx]->material.type != Light;
 		}
 
 		inline bool IsOccludedBVH(Ray& ray, int nodeIdx) const
@@ -1058,6 +1077,31 @@ namespace Tmpl8 {
 				if (IsOccludedBVH(ray, node.c3)) return true;
 				if (IsOccludedBVH(ray, node.c4)) return true;
 			}
+		}
+
+		void GeneratePhoton() {
+
+		}
+
+		void TracePhoton(Photon P, int depth = 0) {
+
+		}
+
+		float3 GetLightPos() const
+		{
+			// light point position is the middle of the swinging quad
+			return lights[0]->GetCenter() - float3(0, 0.01f, 0);
+		}
+
+		float3 GetLightColor() const
+		{
+			return float3(1);
+		}
+
+		MatType GetObjMatType(int objIdx) const
+		{
+			if (objIdx == -1) return Basic;
+			return shapes[objIdx]->material.type;
 		}
 
 		float3 GetNormal(int objIdx, float3 I, float3 wo) const
@@ -1091,10 +1135,15 @@ namespace Tmpl8 {
 			float animTime = 0;
 		Plane plane[7];
 		Sphere sphere;
+		Sphere bulb;
 		Cube cube;
 		TriangleMesh mesh;
 		vector<Shape*> shapes;
 		vector<BVHNode> nodes;
+		
+		vector<Shape*> lights;
+		vector<Photon> PhotonMap;
+
 		int root;
 	};
 }
