@@ -113,13 +113,13 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 }
 
 float3 Renderer::PathTrace(Ray& ray, float iter = 0) {
+	if (iter > 8) return 0;
 	scene.FindNearest(ray);
 	MatType mat = scene.GetObjMatType(ray.objIdx);
-	float3 color = scene.GetLightColor();
 	float3 result;
 
-	if (mat == Light) return color;
-	if (ray.objIdx == -1 || iter > 8) return 0; // or a fancy sky color
+	if (mat == Light) return scene.GetAlbedo(ray.objIdx, 0);
+	if (ray.objIdx == -1) return 0; // or a fancy sky color
 
 	//In order to reduce too many recursion, we use this method to randomly decide whether one ray
 	//should stop bouncing between objects. Here the probability of keeping the ray is P = 0.8
@@ -291,13 +291,10 @@ float3 Renderer::PathTraceNew(Ray& ray, float iter = 0) {
 	}
 }
 
-float3 Renderer::Absorb(float3 color, float distance, float3 absorption)
-{
-	float3 output = color;
-	output.x *= exp(absorption.x * distance);
-	output.y *= exp(absorption.y * distance);
-	output.z *= exp(absorption.z * distance);
-	return output;
+float3 Renderer::BDPT(Ray& ray, float iter = 0) {
+	scene.FindNearest(ray);
+
+	return 0;
 }
 
 // -----------------------------------------------------------
@@ -311,33 +308,33 @@ void Renderer::Tick(float deltaTime)
 	// pixel loop
 	Timer t;
 
-//1. Whitted-style ray-tracing, uncomment this and comment 2. 3. to render this way
-// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
-#	pragma omp parallel for schedule(dynamic)
-	for (int y = 0; y < SCRHEIGHT; y++)
-	{
-		// trace a primary ray for each pixel on the line
-		for (int x = 0; x < SCRWIDTH; x++)
-		{
-			float3 color = float3(0);
-			color = Trace(camera.GetPrimaryRay(x, y));
-
-			////anti-aliasing
-			//color = color + Trace(camera.GetPrimaryRay(x + 0.25, y + 0.1));
-			//color = color + Trace(camera.GetPrimaryRay(x - 0.25, y - 0.1));
-			//color = color + Trace(camera.GetPrimaryRay(x + 0.1, y - 0.25));
-			//color = color + Trace(camera.GetPrimaryRay(x - 0.1, y + 0.25));
-			//color = 0.25 * color;
-
-			accumulator[x + y * SCRWIDTH] =
-				float4(color, 0);
-		}
-
-		// translate accumulator contents to rgb32 pixels
-		for (int dest = y * SCRWIDTH, x = 0; x < SCRWIDTH; x++)
-			screen->pixels[dest + x] =
-			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
-	}
+////1. Whitted-style ray-tracing, uncomment this and comment 2. 3. to render this way
+//// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
+//#	pragma omp parallel for schedule(dynamic)
+//	for (int y = 0; y < SCRHEIGHT; y++)
+//	{
+//		// trace a primary ray for each pixel on the line
+//		for (int x = 0; x < SCRWIDTH; x++)
+//		{
+//			float3 color = float3(0);
+//			color = Trace(camera.GetPrimaryRay(x, y));
+//
+//			////anti-aliasing
+//			//color = color + Trace(camera.GetPrimaryRay(x + 0.25, y + 0.1));
+//			//color = color + Trace(camera.GetPrimaryRay(x - 0.25, y - 0.1));
+//			//color = color + Trace(camera.GetPrimaryRay(x + 0.1, y - 0.25));
+//			//color = color + Trace(camera.GetPrimaryRay(x - 0.1, y + 0.25));
+//			//color = 0.25 * color;
+//
+//			accumulator[x + y * SCRWIDTH] =
+//				float4(color, 0);
+//		}
+//
+//		// translate accumulator contents to rgb32 pixels
+//		for (int dest = y * SCRWIDTH, x = 0; x < SCRWIDTH; x++)
+//			screen->pixels[dest + x] =
+//			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
+//	}
 //
 ////3. Real-time sampling for path tracing, uncomment this and comment 1. 2. to render this way
 ////(in game control is hardly usable here).
@@ -367,31 +364,31 @@ void Renderer::Tick(float deltaTime)
 //	}
 //	sample++;
 //
-//////4. Real-time sampling for path tracing, uncomment this and comment 1. 2. to render this way
-////(in game control is hardly usable here).
-//	printf("sample: %f\n", sample);
-//	// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
-//#	pragma omp parallel for schedule(dynamic)
-//	for (int y = 0; y < SCRHEIGHT; y++)
-//	{
-//		// trace a primary ray for each pixel on the line
-//		for (int x = 0; x < SCRWIDTH; x++)
-//		{
-//			float3 color = PathTrace(camera.GetPrimaryRay(x, y));
-//
-//			accumulator[x + y * SCRWIDTH] *= (sample - 1) / sample;
-//			accumulator[x + y * SCRWIDTH] += float4(color * (BRIGHTNESS / sample), 0);
-//		}
-//
-//		// translate accumulator contents to rgb32 pixels
-//		for (int dest = y * SCRWIDTH, x = 0; x < SCRWIDTH; x++)
-//			screen->pixels[dest + x] =
-//			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
-//	}
-//	sample++;
-
 ////4. Real-time sampling for path tracing, uncomment this and comment 1. 2. to render this way
 //(in game control is hardly usable here).
+	//printf("sample: %f\n", sample);
+	// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
+#	pragma omp parallel for schedule(dynamic)
+	for (int y = 0; y < SCRHEIGHT; y++)
+	{
+		// trace a primary ray for each pixel on the line
+		for (int x = 0; x < SCRWIDTH; x++)
+		{
+			float3 color = PathTrace(camera.GetPrimaryRay(x, y));
+
+			accumulator[x + y * SCRWIDTH] *= (sample - 1) / sample;
+			accumulator[x + y * SCRWIDTH] += float4(color * (BRIGHTNESS / sample), 0);
+		}
+
+		// translate accumulator contents to rgb32 pixels
+		for (int dest = y * SCRWIDTH, x = 0; x < SCRWIDTH; x++)
+			screen->pixels[dest + x] =
+			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
+	}
+	sample++;
+
+////4. Real-time sampling for path tracing, uncomment this and comment 1. 2. to render this way
+////(in game control is hardly usable here).
 //	printf("sample: %f\n", sample);
 //	// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
 //#	pragma omp parallel for schedule(dynamic)
@@ -441,7 +438,7 @@ void Renderer::Tick(float deltaTime)
 	if (alpha > 0.05f) alpha *= 0.5f;
 	float fps = 1000 / avg, rps = (SCRWIDTH * SCRHEIGHT) * fps;
 
-	printf("%5.2fms (%.1fps) - %.1fMrays/s\n", avg, fps, rps / 1000000);
+	//printf("%5.2fms (%.1fps) - %.1fMrays/s\n", avg, fps, rps / 1000000);
 	//printf("ray count: %d, avg depth: %f\n", raycount, alldepth / raycount);
 	//printf("%5.2fms nodes: %d\n", totaltime/bvhcount * 1000, scene.nodes.size());
 }

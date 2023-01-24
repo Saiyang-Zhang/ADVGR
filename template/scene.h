@@ -43,6 +43,11 @@ namespace Tmpl8 {
 		float3 power;
 	};
 
+	struct KDNode {
+		int left, right;
+		int n, index, axis;
+	};
+
 	const float BRIGHTNESS = 2.0f * 3.1415926f;
 	const float INF = 1e30f;
 
@@ -92,8 +97,21 @@ namespace Tmpl8 {
 		MatType type;
 	};
 
+	inline float mht(float3 a, float3 b) {
+		return abs(a.x - b.x) + abs(a.y - b.y) + abs(a.z - b.z);
+	}
+
 	inline float3 f3sqrt(float3 vector) {
 		return float3(sqrt(vector.x), sqrt(vector.y), sqrt(vector.z));
+	}
+
+	inline float3 Absorb(float3 color, float distance, float3 absorption)
+	{
+		float3 output = color;
+		output.x *= exp(absorption.x * distance);
+		output.y *= exp(absorption.y * distance);
+		output.z *= exp(absorption.z * distance);
+		return output;
 	}
 
 	inline float3 mix(float3 x, float3 y, float a) {
@@ -129,8 +147,8 @@ namespace Tmpl8 {
 	public:
 		Ray() = default;
 		Ray(float3 origin, float3 direction, float distance = 1e34f, 
-			MatType media = Air) :
-			media(media)
+			MatType media = Air, float3 albedo = float3(1)) :
+			media(media), albedo(albedo)
 		{
 			O = origin, D = direction, t = distance;
 			// calculate reciprocal ray direction for triangles and AABBs
@@ -152,6 +170,7 @@ namespace Tmpl8 {
 		float t = 1e34f;
 		int objIdx = -1;
 		bool inside = false; // true when in medium
+		float3 albedo;
 	};
 
 	class Shape
@@ -216,7 +235,6 @@ namespace Tmpl8 {
 		{
 			return aabb(this->center - r, this->center + r);
 		}
-
 		Photon GetPhoton() const {
 			Photon result;
 			float3 dir;
@@ -225,9 +243,9 @@ namespace Tmpl8 {
 			float z = rand() * (2.0 / RAND_MAX) - 1.0;
 			dir = float3(x, y, z);
 		
-			result.origin = this->GetCenter() + dir * (r + 0.001);
+			result.origin = this->GetCenter() + dir * r;
 			result.direction = random_in_hemisphere(dir);
-			result.power = float3(1.0);
+			result.power = float3(dot(dir, result.direction));
 			return result;
 		}
 		float r, invr;
@@ -483,6 +501,16 @@ namespace Tmpl8 {
 		return s1->GetAABB().Center(2) < s2->GetAABB().Center(2);
 	}
 
+	inline bool cmppx(Photon p1, Photon p2) {
+		return  p1.origin.x < p2.origin.x;
+	}
+	inline bool cmppy(Photon p1, Photon p2) {
+		return  p1.origin.y < p2.origin.y;
+	}
+	inline bool cmppz(Photon p1, Photon p2) {
+		return  p1.origin.z < p2.origin.z;
+	}
+
 	inline float IntersectAABB(const Ray & ray, const aabb box)
 	{
 		float3 bmin = box.bmin3;
@@ -532,7 +560,7 @@ namespace Tmpl8 {
 			plane[4] = Plane(4, float3(0), 15, white, topT);								// ceiling
 			plane[5] = Plane(5, float3(0), 15, green, frontT);								// front wall
 			plane[6] = Plane(6, float3(0), 15, white, backT);								// back wall
-			sphere = Sphere(6, float3(0), 0.5f, yellow);									// yellow mirror sphere
+			sphere = Sphere(6, float3(0), 0.75f, yellow);									// yellow mirror sphere
 			bulb = Sphere(0, float3(0, 5.5, 0), 2.0f, light);
 			cube = Cube(8, float3(0), float3(1.15f), purple, mat4::Identity());				// purple glass cube
 			
@@ -582,18 +610,17 @@ namespace Tmpl8 {
 			sphere.center = float3(-2.0f, 0.2, 2);
 
 			vector<BVHNode>().swap(nodes);
-
-			//bvhcount++;
-			//Timer time;
+			vector<Photon>().swap(Photons);
+			vector<KDNode>().swap(PhotonMap);
 			
-			root = BuildQBVH(0, shapes.size() - 1, 2);
-			//root = BuildBVH_BIN(0, shapes.size() - 1, 2, 16);
-
-			//totaltime += time.elapsed();
+			int temp = BuildQBVH(0, shapes.size() - 1, 2);
 
 			for (int i = 0; i < shapes.size(); i++) {
 				shapes[i]->objIdx = i;
 			}
+			
+			GeneratePhoton(1000);
+			//printf("photons: %d, kdtree: %d, ratio: %f\n", Photons.size(), PhotonMap.size(), float(PhotonMap.size()) / Photons.size());
 		}
 
 		inline int FindSplit(int lLocal, int rLocal, int& Axis) {
@@ -667,88 +694,88 @@ namespace Tmpl8 {
 			return Split;
 		}
 
-		int BuildBVH(int l, int r, int n) {
-			//no nodes 
-			if (l > r) return -1;
-
-			//generate newest node
-			int idx = nodes.size();
-			nodes.push_back(BVHNode());
-			nodes[idx].c1 = -1;
-			nodes[idx].c2 = -1;
-			nodes[idx].c3 = -1;
-			nodes[idx].c4 = -1;
-			nodes[idx].n = -1;
-			nodes[idx].index = -1;
-
-			nodes[idx].aabb = aabb(float3(INF), float3(-INF));
-
-			//update node boundary
-			for (int i = l; i <= r; i++) {
-				nodes[idx].aabb = nodes[idx].aabb.Union(this->shapes[i]->GetAABB());
-			}
-
-			//if less than n shapes in this node, then this is a leaf node
-			if ((r - l + 1) <= n) {
-				nodes[idx].n = r - l + 1;
-				nodes[idx].index = l;
-				return idx;
-			}
-
-			int Axis = nodes[idx].aabb.LongestAxis();	//axis of the current split method
-			int Split = (l + r) / 2;
-
-			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
-			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
-			if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
-
-			nodes[idx].c1 = BuildBVH(l, Split, n);
-			nodes[idx].c2 = BuildBVH(Split + 1, r, n);
-
-			return idx;
-		}
-
-		int BuildBVH_SAH(int l, int r, int n) {
-			//no nodes 
-			if (l > r) return -1;
-
-			//generate newest node
-			int idx = nodes.size();
-			nodes.push_back(BVHNode());
-			nodes[idx].c1 = -1;
-			nodes[idx].c2 = -1;
-			nodes[idx].c3 = -1;
-			nodes[idx].c4 = -1;
-			nodes[idx].n = -1;
-			nodes[idx].index = -1;
-			nodes[idx].aabb = aabb(float3(INF), float3(-INF));
-
-			//update node boundary
-			for (int i = l; i <= r; i++) {
-				nodes[idx].aabb = nodes[idx].aabb.Union(this->shapes[i]->GetAABB());
-			}
-
-			//if less than n shapes in this node, then this is a leaf node
-			if ((r - l + 1) <= n) {
-				nodes[idx].n = r - l + 1;
-				nodes[idx].index = l;
-				return idx;
-			}
-
-			//Get the optimal split axis
-			int Axis;
-			
-			int Split = FindSplit(l, r, Axis);
-
-			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
-			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
-			if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
-
-			nodes[idx].c1 = BuildBVH_SAH(l, Split, n);
-			nodes[idx].c2 = BuildBVH_SAH(Split + 1, r, n);
-
-			return idx;
-		}
+		//int BuildBVH(int l, int r, int n) {
+		//	//no nodes 
+		//	if (l > r) return -1;
+		//
+		//	//generate newest node
+		//	int idx = nodes.size();
+		//	nodes.push_back(BVHNode());
+		//	nodes[idx].c1 = -1;
+		//	nodes[idx].c2 = -1;
+		//	nodes[idx].c3 = -1;
+		//	nodes[idx].c4 = -1;
+		//	nodes[idx].n = -1;
+		//	nodes[idx].index = -1;
+		//
+		//	nodes[idx].aabb = aabb(float3(INF), float3(-INF));
+		//
+		//	//update node boundary
+		//	for (int i = l; i <= r; i++) {
+		//		nodes[idx].aabb = nodes[idx].aabb.Union(this->shapes[i]->GetAABB());
+		//	}
+		//
+		//	//if less than n shapes in this node, then this is a leaf node
+		//	if ((r - l + 1) <= n) {
+		//		nodes[idx].n = r - l + 1;
+		//		nodes[idx].index = l;
+		//		return idx;
+		//	}
+		//
+		//	int Axis = nodes[idx].aabb.LongestAxis();	//axis of the current split method
+		//	int Split = (l + r) / 2;
+		//
+		//	if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
+		//	if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
+		//	if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
+		//
+		//	nodes[idx].c1 = BuildBVH(l, Split, n);
+		//	nodes[idx].c2 = BuildBVH(Split + 1, r, n);
+		//
+		//	return idx;
+		//}
+		//
+		//int BuildBVH_SAH(int l, int r, int n) {
+		//	//no nodes 
+		//	if (l > r) return -1;
+		//
+		//	//generate newest node
+		//	int idx = nodes.size();
+		//	nodes.push_back(BVHNode());
+		//	nodes[idx].c1 = -1;
+		//	nodes[idx].c2 = -1;
+		//	nodes[idx].c3 = -1;
+		//	nodes[idx].c4 = -1;
+		//	nodes[idx].n = -1;
+		//	nodes[idx].index = -1;
+		//	nodes[idx].aabb = aabb(float3(INF), float3(-INF));
+		//
+		//	//update node boundary
+		//	for (int i = l; i <= r; i++) {
+		//		nodes[idx].aabb = nodes[idx].aabb.Union(this->shapes[i]->GetAABB());
+		//	}
+		//
+		//	//if less than n shapes in this node, then this is a leaf node
+		//	if ((r - l + 1) <= n) {
+		//		nodes[idx].n = r - l + 1;
+		//		nodes[idx].index = l;
+		//		return idx;
+		//	}
+		//
+		//	//Get the optimal split axis
+		//	int Axis;
+		//	
+		//	int Split = FindSplit(l, r, Axis);
+		//
+		//	if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
+		//	if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
+		//	if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
+		//
+		//	nodes[idx].c1 = BuildBVH_SAH(l, Split, n);
+		//	nodes[idx].c2 = BuildBVH_SAH(Split + 1, r, n);
+		//
+		//	return idx;
+		//}
 
 		int BuildQBVH(int l, int r, int n) {
 			//no nodes 
@@ -766,6 +793,7 @@ namespace Tmpl8 {
 			nodes[idx].aabb = aabb(float3(INF), float3(-INF));
 
 			//update node boundary
+#	pragma omp parallel for schedule(dynamic)
 			for (int i = l; i <= r; i++) {
 				nodes[idx].aabb = nodes[idx].aabb.Union(shapes[i]->GetAABB());
 			}
@@ -809,215 +837,215 @@ namespace Tmpl8 {
 			return idx;
 		}
 
-		inline int FindBinSplit(int lLocal, int rLocal, BVHNode& node, int& Axis, int bin) {
-			if (rLocal > shapes.size() - 1) rLocal = shapes.size() - 1;
-			if (lLocal > shapes.size() - 1 || lLocal >= rLocal) return -1;
-
-			//Get the least cost, skip the computation involving the current node
-			float Cost = INF;
-			//Get the optimal split position
-			int Split = -1;
-
-			vector<float> leftS, rightS;
-			aabb aabbLeft, aabbRight;
-			int leftCount, rightCount;
-			float boundsMin, boundsMax;
-			Bin b;
-			b.aabb = aabb(float3(INF), float3(-INF));
-			b.n = 0;
-			vector<Bin> bins;
-
-			//For each axis, find the optimal position
-			for (int axis = 0; axis < 3; axis++) {
-				int split;					//Get the optimal split position along this axis
-				float cost = INF;			//Get the least cost along this axis
-				vector<float>().swap(leftS);
-				vector<float>().swap(rightS);
-				boundsMin = INF;
-				boundsMax = -INF;
-				aabbLeft = aabb(float3(INF), float3(-INF));
-				aabbRight = aabb(float3(INF), float3(-INF));
-				vector<Bin>(bin, b).swap(bins);
-				
-				for (int i = lLocal; i <= rLocal; i++)
-				{
-					float a = shapes[i]->GetCenter()[axis];
-					boundsMax = fmaxf(boundsMax, a);
-					boundsMin = fminf(boundsMin, a);
-				}
-				
-				float scale = bin / (boundsMax - boundsMin);
-
-				for (int i = lLocal; i <= rLocal; i++)
-				{
-					int binIdx = min(bin - 1,
-						(int)((shapes[i]->GetCenter()[axis] - boundsMin) * scale));
-					bins[binIdx].n++;
-					bins[binIdx].aabb = bins[binIdx].aabb.Union(shapes[i]->GetAABB());
-				}
-
-				//for (int i = 0; i < bin; i++) {
-				//	printf("bin: %d, bin.n: %d, binS: %f\n", i, bins[i].n, bins[i].aabb.Area());
-				//}
-
-				leftCount = 0;
-				for (int i = 0; i < bin - 1; i++) {
-					aabbLeft = aabbLeft.Union(bins[i].aabb);
-					leftCount += bins[i].n;
-					if (leftCount > 0) leftS.push_back(aabbLeft.Area());
-					else leftS.push_back(INF);
-				}
-
-				rightCount = rLocal - lLocal + 1;
-				for (int i = bin - 1; i > 0; i--) {
-					aabbRight = aabbRight.Union(bins[i].aabb);
-					rightCount -= bins[i].n;
-					if (rightCount > 0) rightS.push_back(aabbRight.Area());
-					else rightS.push_back(INF);
-				}
-
-				leftCount = 0;
-				rightCount = rLocal - lLocal + 1;
-
-				//Compute the total cost when the split position is different
-				float totalCost;
-				for (int i = 0; i < bin - 1; i++) {
-					if (bins[i].n == 0) continue;
-					leftCount += bins[i].n;
-					rightCount -= bins[i].n;
-					float leftCost = leftCount * leftS[i];
-					float rightCost = rightCount * rightS[bin - i - 2];
-
-					totalCost = leftCost + rightCost;
-					if (totalCost < cost) {
-						cost = totalCost;
-						split = lLocal + leftCount - 1;
-					}
-				}
-
-				//If the cost when split along the current axis at the local optimal split
-				//position is better, update the information
-				if (cost < Cost) {
-					Axis = axis;
-					Cost = cost;
-					Split = split;
-				}
-			}
-
-			return Split;
-		}
-
-		int BuildBVH_BIN(int l, int r, int n, int bin) {
-			//no nodes 
-			if (l > r) return -1;
-
-			//generate newest node
-			int idx = nodes.size();
-			nodes.push_back(BVHNode());
-			nodes[idx].c1 = -1;
-			nodes[idx].c2 = -1;
-			nodes[idx].c3 = -1;
-			nodes[idx].c4 = -1;
-			nodes[idx].n = -1;
-			nodes[idx].index = -1;
-			nodes[idx].aabb = aabb(float3(INF), float3(-INF));
-
-			//update node boundary
-			for (int i = l; i <= r; i++) {
-				nodes[idx].aabb = nodes[idx].aabb.Union(shapes[i]->GetAABB());
-			}
-
-			//if less than n shapes in this node, then this is a leaf node
-			if ((r - l + 1) <= n) {
-				nodes[idx].n = r - l + 1;
-				nodes[idx].index = l;
-				return idx;
-			}
-
-			//Get the optimal split axis
-			int Axis;
-			int Split;
-
-			Split = FindSplit(l, r, Axis);
-
-			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
-			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
-			if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
-
-			nodes[idx].c1 = BuildBVH_BIN(l, Split, n, bin);
-			nodes[idx].c2 = BuildBVH_BIN(Split + 1, r, n, bin);
-
-			return idx;
-		}
-
-		int BuildQBVH_BIN(int l, int r, int n, int bin) {
-			//no nodes 
-			if (l > r) return -1;
-
-			//generate newest node
-			int idx = nodes.size();
-			nodes.push_back(BVHNode());
-			nodes[idx].c1 = -1;
-			nodes[idx].c2 = -1;
-			nodes[idx].c3 = -1;
-			nodes[idx].c4 = -1;
-			nodes[idx].n = -1;
-			nodes[idx].index = -1;
-			nodes[idx].aabb = aabb(float3(INF), float3(-INF));
-
-			//update node boundary
-			for (int i = l; i <= r; i++) {
-				nodes[idx].aabb = nodes[idx].aabb.Union(shapes[i]->GetAABB());
-			}
-
-			//if less than n shapes in this node, then this is a leaf node
-			if ((r - l + 1) <= n) {
-				nodes[idx].n = r - l + 1;
-				nodes[idx].index = l;
-				return idx;
-			}
-
-			//axis of the current split method
-			int Axis;
-			int Middle, MidLeft, MidRight;
-
-			Middle = FindBinSplit(l, r, nodes[idx], Axis, bin);
-
-			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
-			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
-			if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
-
-			if (Middle - l > bin) {
-				MidLeft = FindBinSplit(l, Middle, nodes[idx], Axis, bin);
-			}
-			else {
-				MidLeft = FindSplit(l, Middle, Axis);
-			}
-			MidLeft = MidLeft == -1 ? l : MidLeft;
-
-			if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + Middle + 1, cmpx);
-			if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + Middle + 1, cmpy);
-			if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + Middle + 1, cmpz);
-
-			if (Middle - l > bin) {
-				MidRight = FindBinSplit(Middle + 1, r, nodes[idx], Axis, bin);
-			}
-			else {
-				MidRight = FindSplit(Middle + 1, r, Axis);
-			}
-			MidRight = MidRight == -1 ? r - 1 : MidRight;
-
-			if (Axis == 0) sort(&shapes[0] + Middle + 1, &shapes[0] + r + 1, cmpx);
-			if (Axis == 1) sort(&shapes[0] + Middle + 1, &shapes[0] + r + 1, cmpy);
-			if (Axis == 2) sort(&shapes[0] + Middle + 1, &shapes[0] + r + 1, cmpz);
-
-			nodes[idx].c1 = BuildQBVH(l, MidLeft, n);
-			nodes[idx].c2 = BuildQBVH(MidLeft + 1, Middle, n);
-			nodes[idx].c3 = BuildQBVH(Middle + 1, MidRight, n);
-			nodes[idx].c4 = BuildQBVH(MidRight + 1, r, n);
-
-			return idx;
-		}
+		//inline int FindBinSplit(int lLocal, int rLocal, BVHNode& node, int& Axis, int bin) {
+		//	if (rLocal > shapes.size() - 1) rLocal = shapes.size() - 1;
+		//	if (lLocal > shapes.size() - 1 || lLocal >= rLocal) return -1;
+		//
+		//	//Get the least cost, skip the computation involving the current node
+		//	float Cost = INF;
+		//	//Get the optimal split position
+		//	int Split = -1;
+		//
+		//	vector<float> leftS, rightS;
+		//	aabb aabbLeft, aabbRight;
+		//	int leftCount, rightCount;
+		//	float boundsMin, boundsMax;
+		//	Bin b;
+		//	b.aabb = aabb(float3(INF), float3(-INF));
+		//	b.n = 0;
+		//	vector<Bin> bins;
+		//
+		//	//For each axis, find the optimal position
+		//	for (int axis = 0; axis < 3; axis++) {
+		//		int split;					//Get the optimal split position along this axis
+		//		float cost = INF;			//Get the least cost along this axis
+		//		vector<float>().swap(leftS);
+		//		vector<float>().swap(rightS);
+		//		boundsMin = INF;
+		//		boundsMax = -INF;
+		//		aabbLeft = aabb(float3(INF), float3(-INF));
+		//		aabbRight = aabb(float3(INF), float3(-INF));
+		//		vector<Bin>(bin, b).swap(bins);
+		//		
+		//		for (int i = lLocal; i <= rLocal; i++)
+		//		{
+		//			float a = shapes[i]->GetCenter()[axis];
+		//			boundsMax = fmaxf(boundsMax, a);
+		//			boundsMin = fminf(boundsMin, a);
+		//		}
+		//		
+		//		float scale = bin / (boundsMax - boundsMin);
+		//
+		//		for (int i = lLocal; i <= rLocal; i++)
+		//		{
+		//			int binIdx = min(bin - 1,
+		//				(int)((shapes[i]->GetCenter()[axis] - boundsMin) * scale));
+		//			bins[binIdx].n++;
+		//			bins[binIdx].aabb = bins[binIdx].aabb.Union(shapes[i]->GetAABB());
+		//		}
+		//
+		//		//for (int i = 0; i < bin; i++) {
+		//		//	printf("bin: %d, bin.n: %d, binS: %f\n", i, bins[i].n, bins[i].aabb.Area());
+		//		//}
+		//
+		//		leftCount = 0;
+		//		for (int i = 0; i < bin - 1; i++) {
+		//			aabbLeft = aabbLeft.Union(bins[i].aabb);
+		//			leftCount += bins[i].n;
+		//			if (leftCount > 0) leftS.push_back(aabbLeft.Area());
+		//			else leftS.push_back(INF);
+		//		}
+		//
+		//		rightCount = rLocal - lLocal + 1;
+		//		for (int i = bin - 1; i > 0; i--) {
+		//			aabbRight = aabbRight.Union(bins[i].aabb);
+		//			rightCount -= bins[i].n;
+		//			if (rightCount > 0) rightS.push_back(aabbRight.Area());
+		//			else rightS.push_back(INF);
+		//		}
+		//
+		//		leftCount = 0;
+		//		rightCount = rLocal - lLocal + 1;
+		//
+		//		//Compute the total cost when the split position is different
+		//		float totalCost;
+		//		for (int i = 0; i < bin - 1; i++) {
+		//			if (bins[i].n == 0) continue;
+		//			leftCount += bins[i].n;
+		//			rightCount -= bins[i].n;
+		//			float leftCost = leftCount * leftS[i];
+		//			float rightCost = rightCount * rightS[bin - i - 2];
+		//
+		//			totalCost = leftCost + rightCost;
+		//			if (totalCost < cost) {
+		//				cost = totalCost;
+		//				split = lLocal + leftCount - 1;
+		//			}
+		//		}
+		//
+		//		//If the cost when split along the current axis at the local optimal split
+		//		//position is better, update the information
+		//		if (cost < Cost) {
+		//			Axis = axis;
+		//			Cost = cost;
+		//			Split = split;
+		//		}
+		//	}
+		//
+		//	return Split;
+		//}
+		//
+		//int BuildBVH_BIN(int l, int r, int n, int bin) {
+		//	//no nodes 
+		//	if (l > r) return -1;
+		//
+		//	//generate newest node
+		//	int idx = nodes.size();
+		//	nodes.push_back(BVHNode());
+		//	nodes[idx].c1 = -1;
+		//	nodes[idx].c2 = -1;
+		//	nodes[idx].c3 = -1;
+		//	nodes[idx].c4 = -1;
+		//	nodes[idx].n = -1;
+		//	nodes[idx].index = -1;
+		//	nodes[idx].aabb = aabb(float3(INF), float3(-INF));
+		//
+		//	//update node boundary
+		//	for (int i = l; i <= r; i++) {
+		//		nodes[idx].aabb = nodes[idx].aabb.Union(shapes[i]->GetAABB());
+		//	}
+		//
+		//	//if less than n shapes in this node, then this is a leaf node
+		//	if ((r - l + 1) <= n) {
+		//		nodes[idx].n = r - l + 1;
+		//		nodes[idx].index = l;
+		//		return idx;
+		//	}
+		//
+		//	//Get the optimal split axis
+		//	int Axis;
+		//	int Split;
+		//
+		//	Split = FindSplit(l, r, Axis);
+		//
+		//	if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
+		//	if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
+		//	if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
+		//
+		//	nodes[idx].c1 = BuildBVH_BIN(l, Split, n, bin);
+		//	nodes[idx].c2 = BuildBVH_BIN(Split + 1, r, n, bin);
+		//
+		//	return idx;
+		//}
+		//
+		//int BuildQBVH_BIN(int l, int r, int n, int bin) {
+		//	//no nodes 
+		//	if (l > r) return -1;
+		//
+		//	//generate newest node
+		//	int idx = nodes.size();
+		//	nodes.push_back(BVHNode());
+		//	nodes[idx].c1 = -1;
+		//	nodes[idx].c2 = -1;
+		//	nodes[idx].c3 = -1;
+		//	nodes[idx].c4 = -1;
+		//	nodes[idx].n = -1;
+		//	nodes[idx].index = -1;
+		//	nodes[idx].aabb = aabb(float3(INF), float3(-INF));
+		//
+		//	//update node boundary
+		//	for (int i = l; i <= r; i++) {
+		//		nodes[idx].aabb = nodes[idx].aabb.Union(shapes[i]->GetAABB());
+		//	}
+		//
+		//	//if less than n shapes in this node, then this is a leaf node
+		//	if ((r - l + 1) <= n) {
+		//		nodes[idx].n = r - l + 1;
+		//		nodes[idx].index = l;
+		//		return idx;
+		//	}
+		//
+		//	//axis of the current split method
+		//	int Axis;
+		//	int Middle, MidLeft, MidRight;
+		//
+		//	Middle = FindBinSplit(l, r, nodes[idx], Axis, bin);
+		//
+		//	if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpx);
+		//	if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpy);
+		//	if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + r + 1, cmpz);
+		//
+		//	if (Middle - l > bin) {
+		//		MidLeft = FindBinSplit(l, Middle, nodes[idx], Axis, bin);
+		//	}
+		//	else {
+		//		MidLeft = FindSplit(l, Middle, Axis);
+		//	}
+		//	MidLeft = MidLeft == -1 ? l : MidLeft;
+		//
+		//	if (Axis == 0) sort(&shapes[0] + l, &shapes[0] + Middle + 1, cmpx);
+		//	if (Axis == 1) sort(&shapes[0] + l, &shapes[0] + Middle + 1, cmpy);
+		//	if (Axis == 2) sort(&shapes[0] + l, &shapes[0] + Middle + 1, cmpz);
+		//
+		//	if (Middle - l > bin) {
+		//		MidRight = FindBinSplit(Middle + 1, r, nodes[idx], Axis, bin);
+		//	}
+		//	else {
+		//		MidRight = FindSplit(Middle + 1, r, Axis);
+		//	}
+		//	MidRight = MidRight == -1 ? r - 1 : MidRight;
+		//
+		//	if (Axis == 0) sort(&shapes[0] + Middle + 1, &shapes[0] + r + 1, cmpx);
+		//	if (Axis == 1) sort(&shapes[0] + Middle + 1, &shapes[0] + r + 1, cmpy);
+		//	if (Axis == 2) sort(&shapes[0] + Middle + 1, &shapes[0] + r + 1, cmpz);
+		//
+		//	nodes[idx].c1 = BuildQBVH(l, MidLeft, n);
+		//	nodes[idx].c2 = BuildQBVH(MidLeft + 1, Middle, n);
+		//	nodes[idx].c3 = BuildQBVH(Middle + 1, MidRight, n);
+		//	nodes[idx].c4 = BuildQBVH(MidRight + 1, r, n);
+		//
+		//	return idx;
+		//}
 		
 		void IntersectBVH(Ray& ray, int nodeIdx) const
 		{
@@ -1042,7 +1070,7 @@ namespace Tmpl8 {
 		{
 			float depth = 0;
 			raycount++;
-			IntersectBVH(ray, root);
+			IntersectBVH(ray, 0);
 			alldepth += depth;
 		}
 		
@@ -1050,40 +1078,162 @@ namespace Tmpl8 {
 		{
 			float depth = 0;
 			float rayLength = ray.t;
-			IntersectBVH(ray, root);
+			IntersectBVH(ray, 0);
 			alldepth += depth;
-			return ray.t < rayLength && shapes[ray.objIdx]->material.type != Light;
+			return ray.t < rayLength && GetObjMatType(ray.objIdx) != Light;
 		}
 
-		inline bool IsOccludedBVH(Ray& ray, int nodeIdx) const
-		{
-			if (nodeIdx < 0) return false;
-			float rayLength = ray.t;
-			BVHNode node = nodes[nodeIdx];
-			if (IntersectAABB(ray, node.aabb) == INF) return false;
+		//inline bool IsOccludedBVH(Ray& ray, int nodeIdx) const
+		//{
+		//	if (nodeIdx < 0) return false;
+		//	float rayLength = ray.t;
+		//	BVHNode node = nodes[nodeIdx];
+		//	if (IntersectAABB(ray, node.aabb) == INF) return false;
+		//
+		//	if (node.n > 0)
+		//	{
+		//		for (int i = 0; i < node.n; i++) {
+		//			shapes[node.index + i]->Intersect(ray);
+		//			if (ray.t < rayLength) return true;
+		//		}
+		//		return false;
+		//	}
+		//	else
+		//	{
+		//		if (IsOccludedBVH(ray, node.c1)) return true;
+		//		if (IsOccludedBVH(ray, node.c2)) return true;
+		//		if (IsOccludedBVH(ray, node.c3)) return true;
+		//		if (IsOccludedBVH(ray, node.c4)) return true;
+		//	}
+		//}
 
-			if (node.n > 0)
+		inline void PhotonTrace(Ray& ray, int iter = 0) {
+			if (iter > 5) return; 
+			FindNearest(ray);
+			if (ray.objIdx == -1) return;
+			
+			MatType mat = GetObjMatType(ray.objIdx);
+			
+			if (mat == Light) return;
+
+			double r = rand() * (1.0 / RAND_MAX);
+			float P = 0.8;
+			if (r > P) return;
+
+			float3 I = ray.O + ray.t * ray.D;
+			float3 N = GetNormal(ray.objIdx, I, ray.D);
+			float cos1 = dot(N, -ray.D);
+			float3 albedo = cos1 * 1.25 * ray.albedo * GetAlbedo(ray.objIdx, I);
+			
+			if (mat == Diffuse) {	
+				float3 randomRayDir = normalize(random_in_hemisphere(N));
+				float3 randomRayOri = I + randomRayDir * 0.001;
+				float randomRayCos = -dot(ray.D, randomRayDir);
+				
+				Ray randomRay = Ray(randomRayOri, randomRayDir, INF, ray.media, albedo);
+				PhotonTrace(randomRay, iter + 1);
+				
+				Photon result;		
+				result.origin = I;
+				result.power = albedo;
+				result.direction = randomRayDir;
+
+				Photons.push_back(result);
+			}
+			if (mat == Mirror) {
+				float3 reflectRayDir = normalize(reflect(ray.D, N));
+
+				Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, ray.media, albedo);
+				
+				PhotonTrace(mirrorRay, iter + 1);
+			}
+			if (mat == Glass)
 			{
-				for (int i = 0; i < node.n; i++) {
-					shapes[node.index + i]->Intersect(ray);
-					if (ray.t < rayLength) return true;
+				float3 reflectRayDir = normalize(reflect(ray.D, N));
+				Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, ray.media);
+
+				float k;
+				float cos2;
+				if (ray.media == Air)
+				{
+					cos2 = sqrt(1 - pow(refractive[AirToGlass] * sqrt(1 - pow(cos1, 2)), 2));
+					k = 1 - pow(refractive[AirToGlass], 2) * (1 - pow(cos1, 2));
+
+					float3 refractRayDir = normalize(-cos2 * N + refractive[AirToGlass] * (ray.D + cos1 * N));
+					Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Glass, albedo);
+
+					PhotonTrace(reflectRay, iter + 1);
+					PhotonTrace(refractRay, iter + 1);
 				}
-				return false;
-			}
-			else
-			{
-				if (IsOccludedBVH(ray, node.c1)) return true;
-				if (IsOccludedBVH(ray, node.c2)) return true;
-				if (IsOccludedBVH(ray, node.c3)) return true;
-				if (IsOccludedBVH(ray, node.c4)) return true;
+				if (ray.media == Glass) {
+					k = 1 - pow(refractive[GlassToAir], 2) * (1 - pow(cos1, 2));
+					if (k < 0) PhotonTrace(reflectRay, iter + 1);
+					else {
+						cos2 = sqrt(1 - pow(refractive[GlassToAir] * sqrt(1 - pow(cos1, 2)), 2));
+
+						float3 refractRayDir = normalize(-cos2 * N + refractive[GlassToAir] * (ray.D + cos1 * N));
+						Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Air, albedo);
+
+						PhotonTrace(reflectRay, iter + 1);
+						PhotonTrace(refractRay, iter + 1);
+					}
+				}
 			}
 		}
 
-		void GeneratePhoton() {
+		inline int BuildKDTree(int l, int r) {
+			//no PhotonTree 
+			if (l > r) return -1;
 
+			//generate newest node
+			int idx = PhotonMap.size();
+			PhotonMap.push_back(KDNode());
+			PhotonMap[idx].left = -1;
+			PhotonMap[idx].right = -1;
+			PhotonMap[idx].n = r - l + 1;
+			PhotonMap[idx].index = -1;
+			PhotonMap[idx].axis = -1;
+
+			if (l == r) {
+				PhotonMap[idx].index = l;
+				return idx;
+			}
+			
+			aabb box = aabb(float3(INF), float3(-INF));
+
+			//update node boundary
+			for (int i = l; i <= r; i++) {
+				box.Grow(Photons[i].origin);
+			}
+
+			PhotonMap[idx].axis = box.LongestAxis();	//axis of the current split method
+			int Split = (l + r) / 2;
+
+			if (PhotonMap[idx].axis == 0) sort(&Photons[0] + l, &Photons[0] + r + 1, cmppx);
+			if (PhotonMap[idx].axis == 1) sort(&Photons[0] + l, &Photons[0] + r + 1, cmppy);
+			if (PhotonMap[idx].axis == 2) sort(&Photons[0] + l, &Photons[0] + r + 1, cmppz);
+
+			PhotonMap[idx].left = BuildKDTree(l, Split);
+			PhotonMap[idx].right = BuildKDTree(Split + 1, r);
+
+			return idx;
 		}
 
-		void TracePhoton(Photon P, int depth = 0) {
+		inline void GeneratePhoton(int n) {
+			int num = n / lights.size();
+			for (int i = 0; i < lights.size(); i++) {
+				Shape* light = lights[i];
+				for(int j = 0; j < num; j++) {
+					Photon p = light->GetPhoton();
+					Photons.push_back(p);
+					Ray photonRay = Ray(p.origin + 0.01 * p.direction, p.direction, INF);
+					PhotonTrace(photonRay);
+				}
+			}
+			BuildKDTree(0, Photons.size() - 1);
+		}
+
+		inline void FindNearest(float3 I, float width, int n, vector<int>& result) {
 
 		}
 
@@ -1139,10 +1289,11 @@ namespace Tmpl8 {
 		Cube cube;
 		TriangleMesh mesh;
 		vector<Shape*> shapes;
+		vector<Shape*> lights;
 		vector<BVHNode> nodes;
 		
-		vector<Shape*> lights;
-		vector<Photon> PhotonMap;
+		vector<Photon> Photons;
+		vector<KDNode> PhotonMap;
 
 		int root;
 	};
