@@ -292,9 +292,78 @@ float3 Renderer::PathTraceNew(Ray& ray, float iter = 0) {
 }
 
 float3 Renderer::BDPT(Ray& ray, float iter = 0) {
+	if (iter > 5) return 0;
 	scene.FindNearest(ray);
+	MatType mat = scene.GetObjMatType(ray.objIdx);
+	float3 result;
 
-	return 0;
+	if (mat == Light) return scene.GetAlbedo(ray.objIdx, 0);
+	if (ray.objIdx == -1) return 0; // or a fancy sky color
+
+	//In order to reduce too many recursion, we use this method to randomly decide whether one ray
+	//should stop bouncing between objects. Here the probability of keeping the ray is P = 0.8
+	double r = rand() * (1.0 / RAND_MAX);
+	float P = 0.8;
+	if (r > P) return float3(0);
+
+	float3 I = ray.O + ray.t * ray.D;
+	float3 N = scene.GetNormal(ray.objIdx, I, ray.D);
+	float cos1 = dot(N, -ray.D);
+
+	//Choose the random ray that bounce between objects to implement the environment lighting
+	float3 randomRayDir = normalize(random_in_hemisphere(N));
+	float bounceCos = -dot(ray.D, randomRayDir);
+	Ray randomRay = Ray(I + randomRayDir * 0.001, randomRayDir, INF, ray.media);
+
+	//To make the expectation of the color even, we need to divide the result by P. And to avoid
+	//division, we multiply the color by reciprocal of P
+	if (mat == Diffuse) {
+		float3 albedo = scene.GetIradiance(I, N, 0.2);
+		result = cos1 * 1.25 * albedo * BDPT(randomRay, iter + 1);
+	}
+
+	if (mat == Mirror) {
+		float3 reflectRayDir = normalize(reflect(ray.D, N));
+		Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir);
+		result = cos1 * 1.25 * scene.GetAlbedo(ray.objIdx, I) * BDPT(mirrorRay, iter + 1);
+	}
+	if (mat == Glass)
+	{
+		float3 reflectRayDir = normalize(reflect(ray.D, N));
+		Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, ray.media);
+
+		float k;
+		float cos2;
+		if (ray.media == Air)
+		{
+			cos2 = sqrt(1 - pow(refractive[AirToGlass] * sqrt(1 - pow(cos1, 2)), 2));
+			k = 1 - pow(refractive[AirToGlass], 2) * (1 - pow(cos1, 2));
+
+			float3 refractRayDir = normalize(-cos2 * N + refractive[AirToGlass] * (ray.D + cos1 * N));
+			Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Glass);
+
+			float Fr = 0.5 * ((pow((cos1 - refractive[GlassToAir] * cos2) / (cos1 + refractive[GlassToAir] * cos2), 2)) + (pow((cos2 - refractive[GlassToAir] * cos1) / (cos2 + refractive[GlassToAir] * cos1), 2)));
+			float Ft = 1 - Fr;
+
+			result = cos1 * 1.25 * (BDPT(refractRay, iter + 1) * Ft + BDPT(reflectRay, iter + 1) * Fr);
+		}
+		if (ray.media == Glass) {
+			k = 1 - pow(refractive[GlassToAir], 2) * (1 - pow(cos1, 2));
+			if (k < 0) result = 1.25 * cos1 * BDPT(reflectRay, iter + 1);
+			else {
+				cos2 = sqrt(1 - pow(refractive[GlassToAir] * sqrt(1 - pow(cos1, 2)), 2));
+
+				float3 refractRayDir = normalize(-cos2 * N + refractive[GlassToAir] * (ray.D + cos1 * N));
+				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Air);
+
+				float Fr = 0.5 * ((pow((refractive[GlassToAir] * cos1 - cos2) / (refractive[GlassToAir] * cos1 + cos2), 2)) + (pow((refractive[GlassToAir] * cos2 - cos1) / (refractive[GlassToAir] * cos2 + cos1), 2)));
+				float Ft = 1 - Fr;
+
+				result = 1.25 * cos1 * (BDPT(refractRay, iter + 1) * Ft + BDPT(reflectRay, iter + 1) * Fr);
+			}
+		}
+	}
+	return result;
 }
 
 // -----------------------------------------------------------
@@ -365,28 +434,28 @@ void Renderer::Tick(float deltaTime)
 //	sample++;
 //
 ////4. Real-time sampling for path tracing, uncomment this and comment 1. 2. to render this way
-//(in game control is hardly usable here).
-	//printf("sample: %f\n", sample);
-	// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
-#	pragma omp parallel for schedule(dynamic)
-	for (int y = 0; y < SCRHEIGHT; y++)
-	{
-		// trace a primary ray for each pixel on the line
-		for (int x = 0; x < SCRWIDTH; x++)
-		{
-			float3 color = PathTrace(camera.GetPrimaryRay(x, y));
-
-			accumulator[x + y * SCRWIDTH] *= (sample - 1) / sample;
-			accumulator[x + y * SCRWIDTH] += float4(color * (BRIGHTNESS / sample), 0);
-		}
-
-		// translate accumulator contents to rgb32 pixels
-		for (int dest = y * SCRWIDTH, x = 0; x < SCRWIDTH; x++)
-			screen->pixels[dest + x] =
-			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
-	}
-	sample++;
-
+////(in game control is hardly usable here).
+//	//printf("sample: %f\n", sample);
+//	// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
+//#	pragma omp parallel for schedule(dynamic)
+//	for (int y = 0; y < SCRHEIGHT; y++)
+//	{
+//		// trace a primary ray for each pixel on the line
+//		for (int x = 0; x < SCRWIDTH; x++)
+//		{
+//			float3 color = PathTrace(camera.GetPrimaryRay(x, y));
+//
+//			accumulator[x + y * SCRWIDTH] *= (sample - 1) / sample;
+//			accumulator[x + y * SCRWIDTH] += float4(color * (BRIGHTNESS / sample), 0);
+//		}
+//
+//		// translate accumulator contents to rgb32 pixels
+//		for (int dest = y * SCRWIDTH, x = 0; x < SCRWIDTH; x++)
+//			screen->pixels[dest + x] =
+//			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
+//	}
+//	sample++;
+////
 ////4. Real-time sampling for path tracing, uncomment this and comment 1. 2. to render this way
 ////(in game control is hardly usable here).
 //	printf("sample: %f\n", sample);
@@ -409,6 +478,28 @@ void Renderer::Tick(float deltaTime)
 //			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
 //	}
 //	sample++;
+////5. Real-time sampling for BDPT, uncomment this and comment 1. 2. to render this way
+//(in game control is hardly usable here).
+	//printf("sample: %f\n", sample);
+	// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
+#	pragma omp parallel for schedule(dynamic)
+	for (int y = 0; y < SCRHEIGHT; y++)
+	{
+		// trace a primary ray for each pixel on the line
+		for (int x = 0; x < SCRWIDTH; x++)
+		{
+			float3 color = BDPT(camera.GetPrimaryRay(x, y));
+
+			accumulator[x + y * SCRWIDTH] *= (sample - 1) / sample;
+			accumulator[x + y * SCRWIDTH] += float4(color * (BRIGHTNESS / sample), 0);
+		}
+
+		// translate accumulator contents to rgb32 pixels
+		for (int dest = y * SCRWIDTH, x = 0; x < SCRWIDTH; x++)
+			screen->pixels[dest + x] =
+			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
+	}
+	sample++;
 	
 	// in game control
 	//Move left

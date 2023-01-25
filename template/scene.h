@@ -45,7 +45,7 @@ namespace Tmpl8 {
 
 	struct KDNode {
 		int left, right;
-		int n, index, axis;
+		int index, axis;
 	};
 
 	const float BRIGHTNESS = 2.0f * 3.1415926f;
@@ -147,7 +147,7 @@ namespace Tmpl8 {
 	public:
 		Ray() = default;
 		Ray(float3 origin, float3 direction, float distance = 1e34f, 
-			MatType media = Air, float3 albedo = float3(1)) :
+			MatType media = Air, float3 albedo = float3(1.0)) :
 			media(media), albedo(albedo)
 		{
 			O = origin, D = direction, t = distance;
@@ -245,7 +245,7 @@ namespace Tmpl8 {
 		
 			result.origin = this->GetCenter() + dir * r;
 			result.direction = random_in_hemisphere(dir);
-			result.power = float3(dot(dir, result.direction));
+			result.power = float3(1);
 			return result;
 		}
 		float r, invr;
@@ -610,8 +610,8 @@ namespace Tmpl8 {
 			sphere.center = float3(-2.0f, 0.2, 2);
 
 			vector<BVHNode>().swap(nodes);
-			vector<Photon>().swap(Photons);
-			vector<KDNode>().swap(PhotonMap);
+			vector<Photon>().swap(photons);
+			vector<KDNode>().swap(photonMap);
 			
 			int temp = BuildQBVH(0, shapes.size() - 1, 2);
 
@@ -619,8 +619,7 @@ namespace Tmpl8 {
 				shapes[i]->objIdx = i;
 			}
 			
-			GeneratePhoton(1000);
-			//printf("photons: %d, kdtree: %d, ratio: %f\n", Photons.size(), PhotonMap.size(), float(PhotonMap.size()) / Photons.size());
+			GeneratePhoton(50000);
 		}
 
 		inline int FindSplit(int lLocal, int rLocal, int& Axis) {
@@ -1123,13 +1122,14 @@ namespace Tmpl8 {
 			float3 I = ray.O + ray.t * ray.D;
 			float3 N = GetNormal(ray.objIdx, I, ray.D);
 			float cos1 = dot(N, -ray.D);
-			float3 albedo = cos1 * 1.25 * ray.albedo * GetAlbedo(ray.objIdx, I);
+			float3 albedo;
 			
 			if (mat == Diffuse) {	
 				float3 randomRayDir = normalize(random_in_hemisphere(N));
 				float3 randomRayOri = I + randomRayDir * 0.001;
 				float randomRayCos = -dot(ray.D, randomRayDir);
 				
+				albedo = 1.25 * cos1 * ray.albedo * GetAlbedo(ray.objIdx, I);
 				Ray randomRay = Ray(randomRayOri, randomRayDir, INF, ray.media, albedo);
 				PhotonTrace(randomRay, iter + 1);
 				
@@ -1138,20 +1138,18 @@ namespace Tmpl8 {
 				result.power = albedo;
 				result.direction = randomRayDir;
 
-				Photons.push_back(result);
+				photons.push_back(result);
 			}
 			if (mat == Mirror) {
 				float3 reflectRayDir = normalize(reflect(ray.D, N));
 
+				albedo = 1.25 * cos1 * ray.albedo * GetAlbedo(ray.objIdx, I);
 				Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, ray.media, albedo);
 				
 				PhotonTrace(mirrorRay, iter + 1);
 			}
 			if (mat == Glass)
 			{
-				float3 reflectRayDir = normalize(reflect(ray.D, N));
-				Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, ray.media);
-
 				float k;
 				float cos2;
 				if (ray.media == Air)
@@ -1159,22 +1157,25 @@ namespace Tmpl8 {
 					cos2 = sqrt(1 - pow(refractive[AirToGlass] * sqrt(1 - pow(cos1, 2)), 2));
 					k = 1 - pow(refractive[AirToGlass], 2) * (1 - pow(cos1, 2));
 
+					albedo = cos1 * 1.25 * ray.albedo;
 					float3 refractRayDir = normalize(-cos2 * N + refractive[AirToGlass] * (ray.D + cos1 * N));
 					Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Glass, albedo);
 
-					PhotonTrace(reflectRay, iter + 1);
 					PhotonTrace(refractRay, iter + 1);
 				}
 				if (ray.media == Glass) {
+					albedo = cos1 * 1.25 * Absorb(ray.albedo, ray.t, GetAlbedo(ray.objIdx, I) * 0.1);
 					k = 1 - pow(refractive[GlassToAir], 2) * (1 - pow(cos1, 2));
-					if (k < 0) PhotonTrace(reflectRay, iter + 1);
+					if (k < 0) {
+						float3 reflectRayDir = normalize(reflect(ray.D, N));
+						Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, ray.media, albedo);
+						PhotonTrace(reflectRay, iter + 1);
+					}
 					else {
 						cos2 = sqrt(1 - pow(refractive[GlassToAir] * sqrt(1 - pow(cos1, 2)), 2));
-
 						float3 refractRayDir = normalize(-cos2 * N + refractive[GlassToAir] * (ray.D + cos1 * N));
 						Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Air, albedo);
 
-						PhotonTrace(reflectRay, iter + 1);
 						PhotonTrace(refractRay, iter + 1);
 					}
 				}
@@ -1186,16 +1187,15 @@ namespace Tmpl8 {
 			if (l > r) return -1;
 
 			//generate newest node
-			int idx = PhotonMap.size();
-			PhotonMap.push_back(KDNode());
-			PhotonMap[idx].left = -1;
-			PhotonMap[idx].right = -1;
-			PhotonMap[idx].n = r - l + 1;
-			PhotonMap[idx].index = -1;
-			PhotonMap[idx].axis = -1;
+			int idx = photonMap.size();
+			photonMap.push_back(KDNode());
+			photonMap[idx].left = -1;
+			photonMap[idx].right = -1;
+			photonMap[idx].index = -1;
+			photonMap[idx].axis = -1;
 
 			if (l == r) {
-				PhotonMap[idx].index = l;
+				photonMap[idx].index = l;
 				return idx;
 			}
 			
@@ -1203,18 +1203,19 @@ namespace Tmpl8 {
 
 			//update node boundary
 			for (int i = l; i <= r; i++) {
-				box.Grow(Photons[i].origin);
+				box.Grow(photons[i].origin);
 			}
 
-			PhotonMap[idx].axis = box.LongestAxis();	//axis of the current split method
+			photonMap[idx].axis = box.LongestAxis();	//axis of the current split method
 			int Split = (l + r) / 2;
+			photonMap[idx].index = Split;
 
-			if (PhotonMap[idx].axis == 0) sort(&Photons[0] + l, &Photons[0] + r + 1, cmppx);
-			if (PhotonMap[idx].axis == 1) sort(&Photons[0] + l, &Photons[0] + r + 1, cmppy);
-			if (PhotonMap[idx].axis == 2) sort(&Photons[0] + l, &Photons[0] + r + 1, cmppz);
+			if (photonMap[idx].axis == 0) sort(&photons[0] + l, &photons[0] + r + 1, cmppx);
+			if (photonMap[idx].axis == 1) sort(&photons[0] + l, &photons[0] + r + 1, cmppy);
+			if (photonMap[idx].axis == 2) sort(&photons[0] + l, &photons[0] + r + 1, cmppz);
 
-			PhotonMap[idx].left = BuildKDTree(l, Split);
-			PhotonMap[idx].right = BuildKDTree(Split + 1, r);
+			photonMap[idx].left = BuildKDTree(l, Split);
+			photonMap[idx].right = BuildKDTree(Split + 1, r);
 
 			return idx;
 		}
@@ -1225,16 +1226,52 @@ namespace Tmpl8 {
 				Shape* light = lights[i];
 				for(int j = 0; j < num; j++) {
 					Photon p = light->GetPhoton();
-					Photons.push_back(p);
-					Ray photonRay = Ray(p.origin + 0.01 * p.direction, p.direction, INF);
+					photons.push_back(p);
+					Ray photonRay = Ray(p.origin + 0.01 * p.direction, p.direction);
 					PhotonTrace(photonRay);
 				}
 			}
-			BuildKDTree(0, Photons.size() - 1);
+			BuildKDTree(0, photons.size() - 1);
 		}
 
-		inline void FindNearest(float3 I, float width, int n, vector<int>& result) {
+		inline void FindWithin(float3& I, float& r,int idx, vector<int>& result) {
+			if (idx == -1) return;
 
+			int photon_idx = photonMap[idx].index;
+			float3 origin = photons[photon_idx].origin;
+			
+			float dist2 = dot(I - origin, I - origin);
+			float r2 = r * r;
+
+			if (dist2 <= r2) {
+				result.push_back(photon_idx);
+			}
+
+			float dist = I[photonMap[idx].axis] - origin[photonMap[idx].axis];			
+			if (dist <= r) {
+				FindWithin(I, r, photonMap[idx].left, result);
+			}
+			if (dist >= -r) {
+				FindWithin(I, r, photonMap[idx].right, result);
+			}
+		}
+
+		inline float3 GetIradiance(float3 I, float3 N, float r) {
+			vector<int> result;
+
+			float3 power = float3(0);
+
+			FindWithin(I, r, 0, result);
+			
+			int l = result.size();
+
+			for (int i = 0; i < l; i++) {
+				if (dot(photons[result[i]].direction, N) > 0) power += photons[result[i]].power;
+			}
+
+			float invarea = 1 / (PI * r * r);
+
+			return 0.05 * invarea * power;
 		}
 
 		float3 GetLightPos() const
@@ -1292,8 +1329,8 @@ namespace Tmpl8 {
 		vector<Shape*> lights;
 		vector<BVHNode> nodes;
 		
-		vector<Photon> Photons;
-		vector<KDNode> PhotonMap;
+		vector<Photon> photons;
+		vector<KDNode> photonMap;
 
 		int root;
 	};
