@@ -53,13 +53,6 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 		else return 0.0f;
 	}
 
-	//if (scene.IsOccludedBVH(shadowray, 0)) {
-	//	if (mat == Glass) {
-	//	
-	//	}
-	//	else return 0.0f;
-	//}
-
 	if (mat == Diffuse) {
 		return albedo * (
 			0.25 +
@@ -297,7 +290,7 @@ float3 Renderer::BDPT(Ray& ray, float iter = 0) {
 	MatType mat = scene.GetObjMatType(ray.objIdx);
 	float3 result;
 
-	if (mat == Light) return scene.GetAlbedo(ray.objIdx, 0);
+	//if (mat == Light) return scene.GetAlbedo(ray.objIdx, 0);
 	if (ray.objIdx == -1) return 0; // or a fancy sky color
 
 	//In order to reduce too many recursion, we use this method to randomly decide whether one ray
@@ -317,9 +310,9 @@ float3 Renderer::BDPT(Ray& ray, float iter = 0) {
 
 	//To make the expectation of the color even, we need to divide the result by P. And to avoid
 	//division, we multiply the color by reciprocal of P
-	if (mat == Diffuse) {
-		float3 albedo = scene.GetIradiance(I, N, 0.2);
-		result = cos1 * 1.25 * albedo * BDPT(randomRay, iter + 1);
+	if (mat == Diffuse || mat == Light) {
+		float3 albedo = scene.GetIradiance(I, N, 0.2, 25);
+		result = cos1 * 1.25 * albedo;
 	}
 
 	if (mat == Mirror) {
@@ -345,7 +338,7 @@ float3 Renderer::BDPT(Ray& ray, float iter = 0) {
 			float Fr = 0.5 * ((pow((cos1 - refractive[GlassToAir] * cos2) / (cos1 + refractive[GlassToAir] * cos2), 2)) + (pow((cos2 - refractive[GlassToAir] * cos1) / (cos2 + refractive[GlassToAir] * cos1), 2)));
 			float Ft = 1 - Fr;
 
-			result = cos1 * 1.25 * (BDPT(refractRay, iter + 1) * Ft + BDPT(reflectRay, iter + 1) * Fr);
+			result = cos1 * 1.25 * (Absorb(BDPT(refractRay, iter + 1) * Ft, ray.t, 0.1*scene.GetAlbedo(ray.objIdx, I)) + BDPT(reflectRay, iter + 1) * Fr);
 		}
 		if (ray.media == Glass) {
 			k = 1 - pow(refractive[GlassToAir], 2) * (1 - pow(cos1, 2));
@@ -386,7 +379,7 @@ void Renderer::Tick(float deltaTime)
 //		for (int x = 0; x < SCRWIDTH; x++)
 //		{
 //			float3 color = float3(0);
-//			color = Trace(camera.GetPrimaryRay(x, y));
+//			color = BDPT(camera.GetPrimaryRay(x, y));
 //
 //			////anti-aliasing
 //			//color = color + Trace(camera.GetPrimaryRay(x + 0.25, y + 0.1));
@@ -405,9 +398,8 @@ void Renderer::Tick(float deltaTime)
 //			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
 //	}
 //
-////3. Real-time sampling for path tracing, uncomment this and comment 1. 2. to render this way
+////2. Real-time sampling for path tracing, uncomment this and comment 1. 2. to render this way
 ////(in game control is hardly usable here).
-//	printf("sample: %f\n", sample);
 //	// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
 //#	pragma omp parallel for schedule(dynamic)
 //	for (int y = 0; y < SCRHEIGHT; y++)
@@ -416,11 +408,11 @@ void Renderer::Tick(float deltaTime)
 //		for (int x = 0; x < SCRWIDTH; x++)
 //		{
 //			float3 color = float3(0);
-//			for (i = 0; i < fsample; i++) {
-//				color += PathTrace(camera.GetPrimaryRay(x, y));
+//			for (int i = 0; i < 10; i++) {
+//				color += BDPT(camera.GetPrimaryRay(x, y));
 //			}
 //
-//			color *= BRIGHTNESS / (float)fsample;
+//			color *= BRIGHTNESS / (float)10;
 //
 //			accumulator[x + y * SCRWIDTH] =
 //				float4(color, 0);
@@ -431,7 +423,6 @@ void Renderer::Tick(float deltaTime)
 //			screen->pixels[dest + x] =
 //			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
 //	}
-//	sample++;
 //
 ////4. Real-time sampling for path tracing, uncomment this and comment 1. 2. to render this way
 ////(in game control is hardly usable here).

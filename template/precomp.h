@@ -17,6 +17,8 @@
 #include <map>
 #include <math.h>
 #include <memory>
+#include <queue>
+#include <set>
 #include <sstream>
 #include <string>
 #include <thread>

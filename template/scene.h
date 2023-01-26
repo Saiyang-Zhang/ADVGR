@@ -48,6 +48,12 @@ namespace Tmpl8 {
 		int index, axis;
 	};
 
+	struct Compare {
+		bool operator() (const std::pair<double, int>& a, const std::pair<double, int>& b) const {
+			return a.first > b.first;
+		}
+	};
+
 	const float BRIGHTNESS = 2.0f * 3.1415926f;
 	const float INF = 1e30f;
 
@@ -561,15 +567,15 @@ namespace Tmpl8 {
 			plane[5] = Plane(5, float3(0), 15, green, frontT);								// front wall
 			plane[6] = Plane(6, float3(0), 15, white, backT);								// back wall
 			sphere = Sphere(6, float3(0), 0.75f, yellow);									// yellow mirror sphere
-			bulb = Sphere(0, float3(0, 5.5, 0), 2.0f, light);
+			bulb = Sphere(0, float3(0, 4.5, 0), 1.0f, light);
 			cube = Cube(8, float3(0), float3(1.15f), purple, mat4::Identity());				// purple glass cube
 			
 			for (int i = 1; i < 7; i++) {
 				shapes.push_back(&plane[i]);
 			}
-
-			shapes.push_back(&sphere);
+			
 			shapes.push_back(&bulb);
+			shapes.push_back(&sphere);
 			shapes.push_back(&cube);
 
 			mesh = TriangleMesh(0, "assets/bunny.obj");
@@ -619,7 +625,7 @@ namespace Tmpl8 {
 				shapes[i]->objIdx = i;
 			}
 			
-			GeneratePhoton(50000);
+			GeneratePhoton(100000);
 		}
 
 		inline int FindSplit(int lLocal, int rLocal, int& Axis) {
@@ -1067,18 +1073,13 @@ namespace Tmpl8 {
 		
 		void FindNearest(Ray& ray) const
 		{
-			float depth = 0;
-			raycount++;
 			IntersectBVH(ray, 0);
-			alldepth += depth;
 		}
 		
 		bool IsOccluded(Ray& ray) const
 		{
-			float depth = 0;
 			float rayLength = ray.t;
 			IntersectBVH(ray, 0);
-			alldepth += depth;
 			return ray.t < rayLength && GetObjMatType(ray.objIdx) != Light;
 		}
 
@@ -1130,8 +1131,6 @@ namespace Tmpl8 {
 				float randomRayCos = -dot(ray.D, randomRayDir);
 				
 				albedo = 1.25 * cos1 * ray.albedo * GetAlbedo(ray.objIdx, I);
-				Ray randomRay = Ray(randomRayOri, randomRayDir, INF, ray.media, albedo);
-				PhotonTrace(randomRay, iter + 1);
 				
 				Photon result;		
 				result.origin = I;
@@ -1164,11 +1163,11 @@ namespace Tmpl8 {
 					PhotonTrace(refractRay, iter + 1);
 				}
 				if (ray.media == Glass) {
-					albedo = cos1 * 1.25 * Absorb(ray.albedo, ray.t, GetAlbedo(ray.objIdx, I) * 0.1);
+					albedo = cos1 * 1.25 * Absorb(GetAlbedo(ray.objIdx, I), ray.t, ray.albedo * 0.1);
 					k = 1 - pow(refractive[GlassToAir], 2) * (1 - pow(cos1, 2));
 					if (k < 0) {
 						float3 reflectRayDir = normalize(reflect(ray.D, N));
-						Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, ray.media, albedo);
+						Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, Glass, albedo);
 						PhotonTrace(reflectRay, iter + 1);
 					}
 					else {
@@ -1256,20 +1255,48 @@ namespace Tmpl8 {
 			}
 		}
 
-		inline float3 GetIradiance(float3 I, float3 N, float r) {
+		inline void searchKNearest(float3 I, int idx, int k, std::set<std::pair<double, int>, Compare>& kNearest) {
+			if (idx == -1) return;
+
+			int photon_idx = photonMap[idx].index;
+			float3 origin = photons[photon_idx].origin;
+
+			float dist = dot(I - origin, I - origin);
+
+			kNearest.insert({ dist, photon_idx });
+			if (kNearest.size() > k)
+				kNearest.erase(std::prev(kNearest.end()));
+			int axis = photonMap[idx].axis;
+			double distToPlane = (axis == 0) ? I.x - origin.x :
+				(axis == 1) ? I.y - origin.y :
+				I.z - origin.z;
+			if (distToPlane <= 0)
+				searchKNearest(I, photonMap[idx].left, k, kNearest);
+			if (distToPlane >= 0)
+				searchKNearest(I, photonMap[idx].right, k, kNearest);
+			if (distToPlane * distToPlane < kNearest.rbegin()->first) {
+				if (distToPlane <= 0)
+					searchKNearest(I, photonMap[idx].right, k, kNearest);
+				else
+					searchKNearest(I, photonMap[idx].left, k, kNearest);
+			}
+		}
+
+		inline float3 GetIradiance(float3 I, float3 N, float r, int n) {
 			vector<int> result;
+			std::set<std::pair<double, int>, Compare> kNearest;
 
 			float3 power = float3(0);
 
 			FindWithin(I, r, 0, result);
 			
-			int l = result.size();
+			int l = min(int(result.size()), n);
 
 			for (int i = 0; i < l; i++) {
 				if (dot(photons[result[i]].direction, N) > 0) power += photons[result[i]].power;
 			}
 
-			float invarea = 1 / (PI * r * r);
+			float invarea = INVPI / r * r;
 
 			return 0.05 * invarea * power;
 		}
