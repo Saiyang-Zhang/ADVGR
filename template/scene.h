@@ -203,11 +203,12 @@ namespace Tmpl8 {
 	{
 	public:
 		Sphere() = default;
-		Sphere(int objIdx, float3 p, float r, Material material) : r(r), invr(1 / r)
+		Sphere(int objIdx, float3 p, float r, Material material, mat4 transform = mat4::Identity()) : r(r), invr(1 / r)
 		{
 			this->objIdx = objIdx;
 			this->material = material;
 			this->center = p;
+			this->T = transform, this->invT = transform.FastInvertedTransformNoScale();
 		}
 		void Intersect(Ray& ray) const
 		{
@@ -239,7 +240,7 @@ namespace Tmpl8 {
 		}
 		aabb GetAABB() const
 		{
-			return aabb(this->center - r, this->center + r);
+			return aabb(this->GetCenter() - r, this->GetCenter() + r);
 		}
 		Photon GetPhoton() const {
 			Photon result;
@@ -369,7 +370,7 @@ namespace Tmpl8 {
 		}
 		float3 GetNormal(const float3 I) const
 		{
-			return float3(-T.cell[1], -T.cell[5], -T.cell[9]);
+			return normalize(float3(-T.cell[1], -T.cell[5], -T.cell[9]));
 		}
 		float3 GetCenter() const
 		{
@@ -384,7 +385,11 @@ namespace Tmpl8 {
 
 		Photon GetPhoton() const {
 			Photon result;
-
+			float x = rand() * (2.0 / RAND_MAX) - 1.0;
+			float y = rand() * (2.0 / RAND_MAX) - 1.0;
+			result.direction = random_in_hemisphere(this->GetNormal(float3(0)));
+			result.origin = TransformPosition(center + float3(size * x, 0, size * y), T);
+			result.power = float(1);
 			return result;
 		}
 		float size;
@@ -559,22 +564,20 @@ namespace Tmpl8 {
 			mat4 frontT = mat4::Translate(float3(0, 3, -7)) * mat4::RotateX(PI / 2);
 			mat4 backT = mat4::Translate(float3(0, 3, 7)) * mat4::RotateX(-PI / 2);;
 
-			plane[0] = Plane(0, float3(0), 1, light, mat4::Identity());	                    // light source
+			plane[0] = Plane(0, float3(0), 1, light, mat4::Translate(0, 6, 0));	                    // light source
 			plane[1] = Plane(1, float3(0), 15, red, leftT);									// left wall
 			plane[2] = Plane(2, float3(0), 15, blue, rightT);								// right wall
 			plane[3] = Plane(3, float3(0), 15, white, botT);								// floor
-			plane[4] = Plane(4, float3(0), 15, white, topT);								// ceiling
+			plane[4] = Plane(4, float3(0), 15, light, topT);								// ceiling
 			plane[5] = Plane(5, float3(0), 15, green, frontT);								// front wall
 			plane[6] = Plane(6, float3(0), 15, white, backT);								// back wall
-			sphere = Sphere(6, float3(0), 0.75f, yellow);									// yellow mirror sphere
-			bulb = Sphere(0, float3(0, 4.5, 0), 1.0f, light);
-			cube = Cube(8, float3(0), float3(1.15f), purple, mat4::Identity());				// purple glass cube
+			sphere = Sphere(7, float3(-2, 0, 1.5), 0.75f, yellow, mat4::Identity());									// yellow mirror sphere
+			cube = Cube(8, float3(2, 0, 1.5), float3(1.15f), purple, mat4::Identity());				// purple glass cube
 			
-			for (int i = 1; i < 7; i++) {
+			for (int i = 0; i < 7; i++) {
 				shapes.push_back(&plane[i]);
 			}
 			
-			shapes.push_back(&bulb);
 			shapes.push_back(&sphere);
 			shapes.push_back(&cube);
 
@@ -584,7 +587,7 @@ namespace Tmpl8 {
 				shapes.push_back(&mesh.triangles[i]);
 			}
 
-			lights.push_back(&bulb);
+			lights.push_back(&plane[0]);
 
 			SetTime(0);
 
@@ -610,10 +613,8 @@ namespace Tmpl8 {
 			//float tm = 1 - sqrf(fmodf(animTime, 2.0f) - 1);
 			//sphere.center = float3(-2.0f, -0.5f + tm, 2);
 
-			mat4 M2 = mat4::Translate(float3(2.0f, 0, 2));
-			cube.T = M2, cube.invT = M2.FastInvertedTransformNoScale();
-
-			sphere.center = float3(-2.0f, 0.2, 2);
+			//mat4 M2 = mat4::Translate(float3(2.0f, 0, 2));
+			//cube.T = M2, cube.invT = M2.FastInvertedTransformNoScale();
 
 			vector<BVHNode>().swap(nodes);
 			vector<Photon>().swap(photons);
@@ -1108,37 +1109,28 @@ namespace Tmpl8 {
 		//}
 
 		inline void PhotonTrace(Ray& ray, int iter = 0) {
-			if (iter > 5) return; 
+			if (iter > 8) return;
+
 			FindNearest(ray);
 			if (ray.objIdx == -1) return;
 			
 			MatType mat = GetObjMatType(ray.objIdx);
-			
 			if (mat == Light) return;
-
-			double r = rand() * (1.0 / RAND_MAX);
-			float P = 0.8;
-			if (r > P) return;
 
 			float3 I = ray.O + ray.t * ray.D;
 			float3 N = GetNormal(ray.objIdx, I, ray.D);
 			float cos1 = dot(N, -ray.D);
 			float3 albedo;
 			
-			if (mat == Diffuse) {	
-				float3 randomRayDir = normalize(random_in_hemisphere(N));
-				float3 randomRayOri = I + randomRayDir * 0.001;
-				float randomRayCos = -dot(ray.D, randomRayDir);
-				
-				albedo = 1.25 * cos1 * ray.albedo * GetAlbedo(ray.objIdx, I);
-				
-				Photon result;		
-				result.origin = I;
-				result.power = albedo;
-				result.direction = randomRayDir;
+			float3 randomRayDir = normalize(random_in_hemisphere(N));
+			albedo = 1.25 * cos1 * ray.albedo * GetAlbedo(ray.objIdx, I);
+			Photon result;
+			result.origin = I;
+			result.power = albedo;
+			result.direction = ray.D;
 
-				photons.push_back(result);
-			}
+			photons.push_back(result);
+
 			if (mat == Mirror) {
 				float3 reflectRayDir = normalize(reflect(ray.D, N));
 
@@ -1155,12 +1147,23 @@ namespace Tmpl8 {
 				{
 					cos2 = sqrt(1 - pow(refractive[AirToGlass] * sqrt(1 - pow(cos1, 2)), 2));
 					k = 1 - pow(refractive[AirToGlass], 2) * (1 - pow(cos1, 2));
-
+					
 					albedo = cos1 * 1.25 * ray.albedo;
-					float3 refractRayDir = normalize(-cos2 * N + refractive[AirToGlass] * (ray.D + cos1 * N));
-					Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Glass, albedo);
 
-					PhotonTrace(refractRay, iter + 1);
+					float Fr = 0.5 * ((pow((cos1 - refractive[GlassToAir] * cos2) / (cos1 + refractive[GlassToAir] * cos2), 2)) + (pow((cos2 - refractive[GlassToAir] * cos1) / (cos2 + refractive[GlassToAir] * cos1), 2)));
+
+					float p = rand() * (1.0 / RAND_MAX);
+
+					if (p > Fr) {
+						float3 refractRayDir = normalize(-cos2 * N + refractive[AirToGlass] * (ray.D + cos1 * N));
+						Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Glass, albedo);
+						PhotonTrace(refractRay, iter + 1);
+					}
+					else {
+						float3 reflectRayDir = normalize(reflect(ray.D, N));
+						Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, Glass, albedo);
+						PhotonTrace(reflectRay, iter + 1);
+					}
 				}
 				if (ray.media == Glass) {
 					albedo = cos1 * 1.25 * Absorb(GetAlbedo(ray.objIdx, I), ray.t, ray.albedo * 0.1);
@@ -1172,11 +1175,31 @@ namespace Tmpl8 {
 					}
 					else {
 						cos2 = sqrt(1 - pow(refractive[GlassToAir] * sqrt(1 - pow(cos1, 2)), 2));
-						float3 refractRayDir = normalize(-cos2 * N + refractive[GlassToAir] * (ray.D + cos1 * N));
-						Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Air, albedo);
 
-						PhotonTrace(refractRay, iter + 1);
+						float Fr = 0.5 * ((pow((refractive[GlassToAir] * cos1 - cos2) / (refractive[GlassToAir] * cos1 + cos2), 2)) + (pow((refractive[GlassToAir] * cos2 - cos1) / (refractive[GlassToAir] * cos2 + cos1), 2)));
+						
+						float p = rand() * (1.0 / RAND_MAX);
+
+						if (p > Fr) {
+							float3 refractRayDir = normalize(-cos2 * N + refractive[GlassToAir] * (ray.D + cos1 * N));
+							Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Air, albedo);
+							PhotonTrace(refractRay, iter + 1);
+						}
+						else {
+							float3 reflectRayDir = normalize(reflect(ray.D, N));
+							Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, Glass, albedo);
+							PhotonTrace(reflectRay, iter + 1);
+						}
 					}
+				}
+			}
+			
+			if (mat == Diffuse) {	
+				float r = rand() * (1.0 / RAND_MAX);
+				float P = 0.8;
+				if (r < P) {
+					Ray randomRay = Ray(I + randomRayDir * 0.001, randomRayDir, INF, Air, albedo);
+					PhotonTrace(randomRay, iter + 1);
 				}
 			}
 		}
@@ -1226,7 +1249,7 @@ namespace Tmpl8 {
 				for(int j = 0; j < num; j++) {
 					Photon p = light->GetPhoton();
 					photons.push_back(p);
-					Ray photonRay = Ray(p.origin + 0.01 * p.direction, p.direction);
+					Ray photonRay = Ray(p.origin + 0.001 * p.direction, p.direction);
 					PhotonTrace(photonRay);
 				}
 			}
@@ -1247,10 +1270,10 @@ namespace Tmpl8 {
 			}
 
 			float dist = I[photonMap[idx].axis] - origin[photonMap[idx].axis];			
-			if (dist <= r) {
+			if (dist < r) {
 				FindWithin(I, r, photonMap[idx].left, result);
 			}
-			if (dist >= -r) {
+			if (dist > -r) {
 				FindWithin(I, r, photonMap[idx].right, result);
 			}
 		}
@@ -1282,7 +1305,7 @@ namespace Tmpl8 {
 			}
 		}
 
-		inline float3 GetIradiance(float3 I, float3 N, float r, int n) {
+		inline float3 GetIradiance(float3 I, float3 N, float3 D, float r, int n) {
 			vector<int> result;
 			std::set<std::pair<double, int>, Compare> kNearest;
 
@@ -1292,13 +1315,13 @@ namespace Tmpl8 {
 			
 			int l = min(int(result.size()), n);
 
-			for (int i = 0; i < l; i++) {
-				if (dot(photons[result[i]].direction, N) > 0) power += photons[result[i]].power;
+			for (int i = 0; i < result.size(); i++) {
+				if (dot(photons[result[i]].direction, D) > 0) power += photons[result[i]].power;
 			}
 
 			float invarea = INVPI / r * r;
 
-			return 0.05 * invarea * power;
+			return 0.01 * invarea * power;
 		}
 
 		float3 GetLightPos() const
@@ -1349,7 +1372,6 @@ namespace Tmpl8 {
 			float animTime = 0;
 		Plane plane[7];
 		Sphere sphere;
-		Sphere bulb;
 		Cube cube;
 		TriangleMesh mesh;
 		vector<Shape*> shapes;

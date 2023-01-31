@@ -295,26 +295,25 @@ float3 Renderer::BDPT(Ray& ray, float iter = 0) {
 
 	//In order to reduce too many recursion, we use this method to randomly decide whether one ray
 	//should stop bouncing between objects. Here the probability of keeping the ray is P = 0.8
-	double r = rand() * (1.0 / RAND_MAX);
-	float P = 0.8;
-	if (r > P) return float3(0);
+
 
 	float3 I = ray.O + ray.t * ray.D;
 	float3 N = scene.GetNormal(ray.objIdx, I, ray.D);
 	float cos1 = dot(N, -ray.D);
 
-	//Choose the random ray that bounce between objects to implement the environment lighting
-	float3 randomRayDir = normalize(random_in_hemisphere(N));
-	float bounceCos = -dot(ray.D, randomRayDir);
-	Ray randomRay = Ray(I + randomRayDir * 0.001, randomRayDir, INF, ray.media);
-
 	//To make the expectation of the color even, we need to divide the result by P. And to avoid
 	//division, we multiply the color by reciprocal of P
-	if (mat == Diffuse || mat == Light) {
-		float3 albedo = scene.GetIradiance(I, N, 0.2, 25);
-		result = cos1 * 1.25 * albedo;
+	if (mat == Diffuse || mat == Light) {	
+		double r = rand() * (1.0 / RAND_MAX);
+		float P = 0.8;
+		if (r > P) return scene.GetIradiance(I, N, ray.D, 0.2, 25);
+		else {
+			float3 randomRayDir = normalize(random_in_hemisphere(N));
+			float bounceCos = -dot(ray.D, randomRayDir);
+			Ray randomRay = Ray(I + randomRayDir * 0.001, randomRayDir, INF, ray.media); 
+			return scene.GetIradiance(I, N, ray.D, 0.2, 25) * BDPT(randomRay, iter + 1);
+		}
 	}
-
 	if (mat == Mirror) {
 		float3 reflectRayDir = normalize(reflect(ray.D, N));
 		Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir);
@@ -379,7 +378,7 @@ void Renderer::Tick(float deltaTime)
 //		for (int x = 0; x < SCRWIDTH; x++)
 //		{
 //			float3 color = float3(0);
-//			color = BDPT(camera.GetPrimaryRay(x, y));
+//			color = Trace(camera.GetPrimaryRay(x, y));
 //
 //			////anti-aliasing
 //			//color = color + Trace(camera.GetPrimaryRay(x + 0.25, y + 0.1));
@@ -409,7 +408,7 @@ void Renderer::Tick(float deltaTime)
 //		{
 //			float3 color = float3(0);
 //			for (int i = 0; i < 10; i++) {
-//				color += BDPT(camera.GetPrimaryRay(x, y));
+//				color += PathTrace(camera.GetPrimaryRay(x, y));
 //			}
 //
 //			color *= BRIGHTNESS / (float)10;
