@@ -36,72 +36,67 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	float3 shadowRayDir = normalize(L);
 	float distance = length(L);
 	Ray shadowray = Ray(I + shadowRayDir * 0.001, shadowRayDir, distance, ray.media);
-	float3 albedo = scene.GetAlbedo(ray.objIdx, I);
+	float3 albedo = scene.GetRadiance(I, N, ray.D, 0.1, 10);
 
-	MatType mat = scene.GetObjMatType(ray.objIdx);
-	float3 lightColor = scene.GetLightColor();
+	//MatType mat = scene.GetObjMatType(ray.objIdx);
+	//float3 lightColor = scene.GetLightColor();
 
-	if (scene.IsOccluded(shadowray)) {
-		if (mat == Mirror) {
-			float3 reflectRayDir = normalize(reflect(ray.D, N));
-			Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir);
-			return albedo * Trace(mirrorRay, iter + 1);
-		}
-		if (mat == Glass) {
-			
-		}
-		else return 0.0f;
-	}
+	//if (scene.IsOccluded(shadowray)) {
+	//	if (mat == Mirror) {
+	//		float3 reflectRayDir = normalize(reflect(ray.D, N));
+	//		Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir);
+	//		return albedo * Trace(mirrorRay, iter + 1);
+	//	}
+	//	if (mat == Glass) {
+	//		
+	//	}
+	//	else return 0.0f;
+	//}
 
-	if (mat == Diffuse) {
-		return albedo * (
-			0.25 +
-			max(0.0f, dot(N, L)) *
-			lightColor *
-			(1.0f / (distance * distance))
-			);
-	}
-	if (mat == Mirror) {
-		float3 reflectRayDir = normalize(reflect(ray.D, N));
-		Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, Air);
-		return albedo * Trace(mirrorRay, iter + 1);
-	}	
-	if (mat == Glass) 
-	{	
-		float3 reflectRayDir = normalize(reflect(ray.D, N));
-		Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, ray.media);
-		
-		float k;
-		float cos2;
-		if (ray.media == Air)
-		{
-			cos2 = sqrt(1 - pow(refractive[AirToGlass] * sqrt(1 - pow(cos1, 2)), 2));
-			k = 1 - pow(refractive[AirToGlass], 2) * (1 - pow(cos1, 2));
-			
-			float3 refractRayDir = normalize(-cos2 * N + refractive[AirToGlass] * (ray.D + cos1 * N));
-			Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Glass);
-			
-			float Fr = 0.5 * ((pow((cos1 - refractive[GlassToAir] * cos2) / (cos1 + refractive[GlassToAir] * cos2), 2)) + (pow((cos2 - refractive[GlassToAir] * cos1) / (cos2 + refractive[GlassToAir] * cos1), 2)));
-			float Ft = 1 - Fr;
+	//if (mat == Diffuse) {
+	//	return albedo;
+	//}
+	//if (mat == Mirror) {
+	//	float3 reflectRayDir = normalize(reflect(ray.D, N));
+	//	Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, Air);
+	//	return albedo * Trace(mirrorRay, iter + 1);
+	//}	
+	//if (mat == Glass) 
+	//{	
+	//	float3 reflectRayDir = normalize(reflect(ray.D, N));
+	//	Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, ray.media);
+	//	
+	//	float k;
+	//	float cos2;
+	//	if (ray.media == Air)
+	//	{
+	//		cos2 = sqrt(1 - pow(refractive[AirToGlass] * sqrt(1 - pow(cos1, 2)), 2));
+	//		k = 1 - pow(refractive[AirToGlass], 2) * (1 - pow(cos1, 2));
+	//		
+	//		float3 refractRayDir = normalize(-cos2 * N + refractive[AirToGlass] * (ray.D + cos1 * N));
+	//		Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Glass);
+	//		
+	//		float Fr = 0.5 * ((pow((cos1 - refractive[GlassToAir] * cos2) / (cos1 + refractive[GlassToAir] * cos2), 2)) + (pow((cos2 - refractive[GlassToAir] * cos1) / (cos2 + refractive[GlassToAir] * cos1), 2)));
+	//		float Ft = 1 - Fr;
 
-			return Absorb(Trace(refractRay, iter + 1) * Ft, ray.t, albedo * 0.1) + Trace(reflectRay, iter + 1) * Fr;
-		}
-		if (ray.media == Glass) {
-			k = 1 - pow(refractive[GlassToAir], 2) * (1 - pow(cos1, 2));
-			if (k < 0) return Trace(reflectRay, iter + 1);
-			else {
-				cos2 = sqrt(1 - pow(refractive[GlassToAir] * sqrt(1 - pow(cos1, 2)), 2));
+	//		return Absorb(Trace(refractRay, iter + 1) * Ft, ray.t, albedo * 0.1) + Trace(reflectRay, iter + 1) * Fr;
+	//	}
+	//	if (ray.media == Glass) {
+	//		k = 1 - pow(refractive[GlassToAir], 2) * (1 - pow(cos1, 2));
+	//		if (k < 0) return Trace(reflectRay, iter + 1);
+	//		else {
+	//			cos2 = sqrt(1 - pow(refractive[GlassToAir] * sqrt(1 - pow(cos1, 2)), 2));
 
-				float3 refractRayDir = normalize(-cos2 * N + refractive[GlassToAir] * (ray.D + cos1 * N));
-				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Air);
+	//			float3 refractRayDir = normalize(-cos2 * N + refractive[GlassToAir] * (ray.D + cos1 * N));
+	//			Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Air);
 
-				float Fr = 0.5 * ((pow((refractive[GlassToAir] * cos1 - cos2) / (refractive[GlassToAir] * cos1 + cos2), 2)) + (pow((refractive[GlassToAir] * cos2 - cos1) / (refractive[GlassToAir] * cos2 + cos1), 2)));
-				float Ft = 1 - Fr;
+	//			float Fr = 0.5 * ((pow((refractive[GlassToAir] * cos1 - cos2) / (refractive[GlassToAir] * cos1 + cos2), 2)) + (pow((refractive[GlassToAir] * cos2 - cos1) / (refractive[GlassToAir] * cos2 + cos1), 2)));
+	//			float Ft = 1 - Fr;
 
-				return Trace(refractRay, iter + 1) * Ft + Trace(reflectRay, iter + 1) * Fr;
-			}
-		}
-	}
+	//			return Trace(refractRay, iter + 1) * Ft + Trace(reflectRay, iter + 1) * Fr;
+	//		}
+	//	}
+	//}
 	return albedo;
 }
 
@@ -162,9 +157,13 @@ float3 Renderer::PathTrace(Ray& ray, float iter = 0) {
 			Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Glass);
 
 			float Fr = 0.5 * ((pow((cos1 - refractive[GlassToAir] * cos2) / (cos1 + refractive[GlassToAir] * cos2), 2)) + (pow((cos2 - refractive[GlassToAir] * cos1) / (cos2 + refractive[GlassToAir] * cos1), 2)));
-			float Ft = 1 - Fr;
-
-			result = cos1 * 1.25 * (Absorb(PathTrace(refractRay, iter + 1) * Ft, ray.t, albedo * 0.1) + PathTrace(reflectRay, iter + 1) * Fr);
+			double r = rand() * (1.0 / RAND_MAX);
+			if (r < Fr) {
+				result = cos1 * 1.25 * PathTrace(reflectRay, iter + 1);
+			}
+			else {
+				result = cos1 * 1.25 * Absorb(PathTrace(refractRay, iter + 1), ray.t, albedo * 0.1);
+			}
 		}
 		if (ray.media == Glass) {
 			k = 1 - pow(refractive[GlassToAir], 2) * (1 - pow(cos1, 2));
@@ -176,9 +175,13 @@ float3 Renderer::PathTrace(Ray& ray, float iter = 0) {
 				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Air);
 
 				float Fr = 0.5 * ((pow((refractive[GlassToAir] * cos1 - cos2) / (refractive[GlassToAir] * cos1 + cos2), 2)) + (pow((refractive[GlassToAir] * cos2 - cos1) / (refractive[GlassToAir] * cos2 + cos1), 2)));
-				float Ft = 1 - Fr;
-
-				result = 1.25 * cos1 * (PathTrace(refractRay, iter + 1) * Ft + PathTrace(reflectRay, iter + 1) * Fr);
+				double r = rand() * (1.0 / RAND_MAX);
+				if (r < Fr) {
+					result = 1.25 * cos1 * PathTrace(reflectRay, iter + 1);
+				}
+				else {
+					result = 1.25 * cos1 * PathTrace(refractRay, iter + 1);
+				}
 			}
 		}
 	}
@@ -285,77 +288,101 @@ float3 Renderer::PathTraceNew(Ray& ray, float iter = 0) {
 }
 
 float3 Renderer::BDPT(Ray& ray, float iter = 0) {
-	if (iter > 5) return 0;
+	if (iter > 8) return 0;
+
+	double r = rand() * (1.0 / RAND_MAX);
+	float P = 0.8;
+	if (r > P) return 0;
+
 	scene.FindNearest(ray);
 	MatType mat = scene.GetObjMatType(ray.objIdx);
-	float3 result;
-
-	//if (mat == Light) return scene.GetAlbedo(ray.objIdx, 0);
-	if (ray.objIdx == -1) return 0; // or a fancy sky color
-
-	//In order to reduce too many recursion, we use this method to randomly decide whether one ray
-	//should stop bouncing between objects. Here the probability of keeping the ray is P = 0.8
-
-
+	if (ray.objIdx == -1) return 0;
+	if (mat == Light) {
+		if (ray.media == Mirror) return 0;
+		return 0;
+	}
+	
+	
 	float3 I = ray.O + ray.t * ray.D;
 	float3 N = scene.GetNormal(ray.objIdx, I, ray.D);
-	float cos1 = dot(N, -ray.D);
+	float A = scene.GetLightArea();
+	float3 Ld = 0;
+	float3 Ei;
+	float3 BRDF = scene.GetAlbedo(ray.objIdx, 0) * INVPI;
 
-	//To make the expectation of the color even, we need to divide the result by P. And to avoid
-	//division, we multiply the color by reciprocal of P
-	if (mat == Diffuse || mat == Light) {	
-		double r = rand() * (1.0 / RAND_MAX);
-		float P = 0.8;
-		if (r > P) return scene.GetIradiance(I, N, ray.D, 0.2, 25);
-		else {
-			float3 randomRayDir = normalize(random_in_hemisphere(N));
-			float bounceCos = -dot(ray.D, randomRayDir);
-			Ray randomRay = Ray(I + randomRayDir * 0.001, randomRayDir, INF, ray.media); 
-			return scene.GetIradiance(I, N, ray.D, 0.2, 25) * BDPT(randomRay, iter + 1);
-		}
+	float3 pointOnLight = scene.GetLightPoint();
+	float3 N1 = scene.GetLightNormal(pointOnLight);
+	if (mat == Diffuse) {
+		/*float3 shadowRayDir = normalize(pointOnLight - I);
+		if (dot(N, shadowRayDir) > 0 && -dot(N1, shadowRayDir) > 0) {
+			float dist = length(pointOnLight - I);
+			Ray shadowRay = Ray(I + shadowRayDir * 0.001, shadowRayDir, dist - 0.001);
+			if (!scene.IsOccluded(shadowRay)) {
+				float solidAngle = (-dot(N1, shadowRayDir) * A) / (dist * dist);
+				Ld = scene.GetLightColor() * solidAngle * BRDF * dot(N, shadowRayDir);
+			}
+		}*/
+		Ld = scene.GetRadiance(I, N, ray.D, 0.1, 10) / (ray.t * ray.t);
+		float3 randomRayDir = normalize(random_in_hemisphere(N));
+		Ray randomRay = Ray(I + randomRayDir * 0.001, randomRayDir, INF, ray.media); 
+		Ei = BDPT(randomRay, iter + 1) * dot(N, randomRayDir) * INVPI;
 	}
+
 	if (mat == Mirror) {
 		float3 reflectRayDir = normalize(reflect(ray.D, N));
-		Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir);
-		result = cos1 * 1.25 * scene.GetAlbedo(ray.objIdx, I) * BDPT(mirrorRay, iter + 1);
+		Ray mirrorRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, Mirror);
+		Ei = BDPT(mirrorRay, iter + 1);
 	}
+
 	if (mat == Glass)
 	{
-		float3 reflectRayDir = normalize(reflect(ray.D, N));
-		Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, ray.media);
-
+		float cos1 = dot(N, -ray.D);
 		float k;
 		float cos2;
 		if (ray.media == Air)
 		{
 			cos2 = sqrt(1 - pow(refractive[AirToGlass] * sqrt(1 - pow(cos1, 2)), 2));
 			k = 1 - pow(refractive[AirToGlass], 2) * (1 - pow(cos1, 2));
-
-			float3 refractRayDir = normalize(-cos2 * N + refractive[AirToGlass] * (ray.D + cos1 * N));
-			Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Glass);
-
 			float Fr = 0.5 * ((pow((cos1 - refractive[GlassToAir] * cos2) / (cos1 + refractive[GlassToAir] * cos2), 2)) + (pow((cos2 - refractive[GlassToAir] * cos1) / (cos2 + refractive[GlassToAir] * cos1), 2)));
-			float Ft = 1 - Fr;
 
-			result = cos1 * 1.25 * (Absorb(BDPT(refractRay, iter + 1) * Ft, ray.t, 0.1*scene.GetAlbedo(ray.objIdx, I)) + BDPT(reflectRay, iter + 1) * Fr);
+			double r = rand() * (1.0 / RAND_MAX);
+			if (r < Fr) {
+				float3 reflectRayDir = normalize(reflect(ray.D, N));
+				Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, Mirror);
+				Ei = BDPT(reflectRay, iter + 1);
+			}
+			else {
+				float3 refractRayDir = normalize(-cos2 * N + refractive[AirToGlass] * (ray.D + cos1 * N));
+				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Glass);
+				Ei = Absorb(BDPT(refractRay, iter + 1), ray.t, 0.1 * scene.GetRadiance(I, N, ray.D, 0.1, 10));
+			}
 		}
 		if (ray.media == Glass) {
 			k = 1 - pow(refractive[GlassToAir], 2) * (1 - pow(cos1, 2));
-			if (k < 0) result = 1.25 * cos1 * BDPT(reflectRay, iter + 1);
+			if (k < 0) {
+				float3 reflectRayDir = normalize(reflect(ray.D, N));
+				Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, ray.media);
+				Ei = BDPT(reflectRay, iter + 1);
+			}
 			else {
 				cos2 = sqrt(1 - pow(refractive[GlassToAir] * sqrt(1 - pow(cos1, 2)), 2));
-
-				float3 refractRayDir = normalize(-cos2 * N + refractive[GlassToAir] * (ray.D + cos1 * N));
-				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Air);
-
 				float Fr = 0.5 * ((pow((refractive[GlassToAir] * cos1 - cos2) / (refractive[GlassToAir] * cos1 + cos2), 2)) + (pow((refractive[GlassToAir] * cos2 - cos1) / (refractive[GlassToAir] * cos2 + cos1), 2)));
-				float Ft = 1 - Fr;
 
-				result = 1.25 * cos1 * (BDPT(refractRay, iter + 1) * Ft + BDPT(reflectRay, iter + 1) * Fr);
+				double r = rand() * (1.0 / RAND_MAX);
+				if (r < Fr) {
+					float3 reflectRayDir = normalize(reflect(ray.D, N));
+					Ray reflectRay = Ray(I + reflectRayDir * 0.001, reflectRayDir, INF, ray.media);
+					Ei = BDPT(reflectRay, iter + 1);
+				}
+				else {
+					float3 refractRayDir = normalize(-cos2 * N + refractive[GlassToAir] * (ray.D + cos1 * N));
+					Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Air);
+					Ei = BDPT(refractRay, iter + 1);
+				}
 			}
 		}
 	}
-	return result;
+	return 1.25 * PI * 2.0f * BRDF * Ei + Ld;
 }
 
 // -----------------------------------------------------------
@@ -368,30 +395,21 @@ void Renderer::Tick(float deltaTime)
 	scene.SetTime(animTime += deltaTime * 0.002f);
 	// pixel loop
 	Timer t;
-
-////1. Whitted-style ray-tracing, uncomment this and comment 2. 3. to render this way
-//// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
+//
+//1. Whitted-style ray-tracing, uncomment this and comment 2. 3. to render this way
+// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
 //#	pragma omp parallel for schedule(dynamic)
 //	for (int y = 0; y < SCRHEIGHT; y++)
 //	{
-//		// trace a primary ray for each pixel on the line
 //		for (int x = 0; x < SCRWIDTH; x++)
 //		{
 //			float3 color = float3(0);
 //			color = Trace(camera.GetPrimaryRay(x, y));
 //
-//			////anti-aliasing
-//			//color = color + Trace(camera.GetPrimaryRay(x + 0.25, y + 0.1));
-//			//color = color + Trace(camera.GetPrimaryRay(x - 0.25, y - 0.1));
-//			//color = color + Trace(camera.GetPrimaryRay(x + 0.1, y - 0.25));
-//			//color = color + Trace(camera.GetPrimaryRay(x - 0.1, y + 0.25));
-//			//color = 0.25 * color;
-//
 //			accumulator[x + y * SCRWIDTH] =
 //				float4(color, 0);
 //		}
 //
-//		// translate accumulator contents to rgb32 pixels
 //		for (int dest = y * SCRWIDTH, x = 0; x < SCRWIDTH; x++)
 //			screen->pixels[dest + x] =
 //			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
@@ -406,12 +424,13 @@ void Renderer::Tick(float deltaTime)
 //		// trace a primary ray for each pixel on the line
 //		for (int x = 0; x < SCRWIDTH; x++)
 //		{
-//			float3 color = float3(0);
-//			for (int i = 0; i < 10; i++) {
-//				color += PathTrace(camera.GetPrimaryRay(x, y));
-//			}
+//			//float3 color = float3(0);
+//			//for (int i = 0; i < 10; i++) {
+//			//	color += PathTrace(camera.GetPrimaryRay(x, y));
+//			//}
 //
-//			color *= BRIGHTNESS / (float)10;
+//			//color *= BRIGHTNESS / (float)10;
+//			float3 color = BDPT(camera.GetPrimaryRay(x, y));
 //
 //			accumulator[x + y * SCRWIDTH] =
 //				float4(color, 0);
@@ -468,7 +487,7 @@ void Renderer::Tick(float deltaTime)
 //			RGBF32_to_RGB8(&accumulator[x + y * SCRWIDTH]);
 //	}
 //	sample++;
-////5. Real-time sampling for BDPT, uncomment this and comment 1. 2. to render this way
+//5. Real-time sampling for BDPT, uncomment this and comment 1. 2. to render this way
 //(in game control is hardly usable here).
 	//printf("sample: %f\n", sample);
 	// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
