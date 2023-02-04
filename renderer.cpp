@@ -36,7 +36,7 @@ float3 Renderer::Trace(Ray& ray, int iter = 0)
 	float3 shadowRayDir = normalize(L);
 	float distance = length(L);
 	Ray shadowray = Ray(I + shadowRayDir * 0.001, shadowRayDir, distance, ray.media);
-	float3 albedo = scene.GetRadiance(I, N, ray.D, 0.1, 10);
+	float3 albedo = scene.GetRadiance(I, N, ray.D, 10);
 
 	//MatType mat = scene.GetObjMatType(ray.objIdx);
 	//float3 lightColor = scene.GetLightColor();
@@ -301,8 +301,6 @@ float3 Renderer::BDPT(Ray& ray, float iter = 0) {
 		if (ray.media == Mirror) return 0;
 		return 0;
 	}
-	
-	
 	float3 I = ray.O + ray.t * ray.D;
 	float3 N = scene.GetNormal(ray.objIdx, I, ray.D);
 	float A = scene.GetLightArea();
@@ -313,16 +311,16 @@ float3 Renderer::BDPT(Ray& ray, float iter = 0) {
 	float3 pointOnLight = scene.GetLightPoint();
 	float3 N1 = scene.GetLightNormal(pointOnLight);
 	if (mat == Diffuse) {
-		/*float3 shadowRayDir = normalize(pointOnLight - I);
-		if (dot(N, shadowRayDir) > 0 && -dot(N1, shadowRayDir) > 0) {
-			float dist = length(pointOnLight - I);
-			Ray shadowRay = Ray(I + shadowRayDir * 0.001, shadowRayDir, dist - 0.001);
-			if (!scene.IsOccluded(shadowRay)) {
-				float solidAngle = (-dot(N1, shadowRayDir) * A) / (dist * dist);
-				Ld = scene.GetLightColor() * solidAngle * BRDF * dot(N, shadowRayDir);
-			}
-		}*/
-		Ld = scene.GetRadiance(I, N, ray.D, 0.1, 10) / (ray.t * ray.t);
+		//float3 shadowRayDir = normalize(pointOnLight - I);
+		//if (dot(N, shadowRayDir) > 0 && -dot(N1, shadowRayDir) > 0) {
+		//	float dist = length(pointOnLight - I);
+		//	Ray shadowRay = Ray(I + shadowRayDir * 0.001, shadowRayDir, dist - 0.001);
+		//	if (!scene.IsOccluded(shadowRay)) {
+		//		float solidAngle = (-dot(N1, shadowRayDir) * A) / (dist * dist);
+		//		Ld = scene.GetLightColor() * solidAngle * BRDF * dot(N, shadowRayDir);
+		//	}
+		//}
+		Ld = scene.GetRadiance(I, N, ray.D, 25);
 		float3 randomRayDir = normalize(random_in_hemisphere(N));
 		Ray randomRay = Ray(I + randomRayDir * 0.001, randomRayDir, INF, ray.media); 
 		Ei = BDPT(randomRay, iter + 1) * dot(N, randomRayDir) * INVPI;
@@ -354,7 +352,7 @@ float3 Renderer::BDPT(Ray& ray, float iter = 0) {
 			else {
 				float3 refractRayDir = normalize(-cos2 * N + refractive[AirToGlass] * (ray.D + cos1 * N));
 				Ray refractRay = Ray(I + refractRayDir * 0.001, refractRayDir, INF, Glass);
-				Ei = Absorb(BDPT(refractRay, iter + 1), ray.t, 0.1 * scene.GetRadiance(I, N, ray.D, 0.1, 10));
+				Ei = Absorb(BDPT(refractRay, iter + 1), ray.t, 0.1 * scene.GetRadiance(I, N, ray.D, 10));
 			}
 		}
 		if (ray.media == Glass) {
@@ -396,8 +394,8 @@ void Renderer::Tick(float deltaTime)
 	// pixel loop
 	Timer t;
 //
-//1. Whitted-style ray-tracing, uncomment this and comment 2. 3. to render this way
-// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
+////1. Whitted-style ray-tracing, uncomment this and comment 2. 3. to render this way
+//// lines are executed as OpenMP parallel tasks (disabled in DEBUG)
 //#	pragma omp parallel for schedule(dynamic)
 //	for (int y = 0; y < SCRHEIGHT; y++)
 //	{

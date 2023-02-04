@@ -631,7 +631,7 @@ namespace Tmpl8 {
 				shapes[i]->objIdx = i;
 			}
 
-			GeneratePhoton(100000);
+			GeneratePhoton(10000);
 		}
 
 		inline int FindSplit(int lLocal, int rLocal, int& Axis) {
@@ -1105,7 +1105,7 @@ namespace Tmpl8 {
 			
 			if (mat == Diffuse) {
 				float3 BRDF = INVPI * GetAlbedo(ray.objIdx, I);
-				float3 randomRayDir = random_in_hemisphere(N);
+				float3 randomRayDir = CosineWeightedDistribution(N);
 				energy = 1.25 * ray.energy * BRDF * dot(N, randomRayDir);
 				float r = rand() * (1.0 / RAND_MAX);
 				float P = 0.8;
@@ -1233,47 +1233,55 @@ namespace Tmpl8 {
 			BuildKDTree(0, photons.size() - 1);
 		}
 
-		inline void FindWithin(float3& I, float& r, int idx, std::set<std::pair<double, int>, Compare>& result) {
+		void knnSearch(int idx, float3 I, int k, std::priority_queue<std::pair<double, int>, std::vector<std::pair<double, int>>, Compare>& heap) {
 			if (idx == -1) return;
 
 			int photon_idx = photonMap[idx].index;
 			float3 origin = photons[photon_idx].origin;
+			float R;
 
 			float dist2 = dot(I - origin, I - origin);
-			float r2 = r * r;
-
-			if (dist2 < r2) {
-				result.insert({ dist2, photon_idx });
+			if (heap.size() < k) {
+				heap.push({ dist2, photon_idx });
+				R = INF;
+			}
+			else if (dist2 < heap.top().first) {
+				heap.pop();
+				heap.push({ dist2, photon_idx });
+				R = sqrtf(heap.top().first);
+			}
+			else {
+				R = sqrtf(heap.top().first);
 			}
 
-			float dist = I[photonMap[idx].axis] - origin[photonMap[idx].axis];
-			if (dist < r) {
-				FindWithin(I, r, photonMap[idx].left, result);
+			double distToPlane = I[photonMap[idx].axis] - origin[photonMap[idx].axis];
+			//printf("%f, %f\n", R, distToPlane);
+			if (distToPlane < R) {
+				knnSearch(photonMap[idx].left, I, k, heap);
 			}
-			if (dist > -r) {
-				FindWithin(I, r, photonMap[idx].right, result);
+			if (distToPlane > -R) {
+				knnSearch(photonMap[idx].right, I, k, heap);
 			}
 		}
 
-		inline float3 GetRadiance(float3 I, float3 N, float3 D, float r, int n) {
-			std::set<std::pair<double, int>, Compare> result;
-			std::set<std::pair<double, int>, Compare>::iterator it;
+		inline float3 GetRadiance(float3 I, float3 N, float3 D, int n) {
+			std::priority_queue<std::pair<double, int>, std::vector<std::pair<double, int>>, Compare> result;
 
 			float3 power = float3(0);
 
-			FindWithin(I, r, 0, result);
-			it = result.begin();
+			knnSearch(0, I, n, result);
 
-			int l = min(int(result.size()), n);
+			float R = result.top().first;
 
-			for (int i = 0; i < l; i++) {
-				if (dot(photons[(*it).second].direction, D) < 0) power += photons[(*it).second].power * dot(photons[(*it).second].direction, -D);
-				it++;
+			for (int i = 0; i < n; i++) {
+				int idx = result.top().second;
+				if (dot(photons[idx].direction, D) < 0) power += photons[idx].power * dot(photons[idx].direction, -D);
+				result.pop();
 			}
 
-			float invarea = INVPI / (r * r);
+			float invarea = INVPI;
 
-			return  invarea * power;
+			return invarea * power;
 		}
 
 		float3 GetLightPos() const
